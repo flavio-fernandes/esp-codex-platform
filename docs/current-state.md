@@ -2,7 +2,7 @@
 
 ## Repository
 
-- Repo: local starter until GitHub is explicitly created.
+- Repo: private GitHub repo configured as `origin`.
 - Branch: `main`
 - Roadmap: `docs/roadmap.md`
 

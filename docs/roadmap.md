@@ -3,6 +3,7 @@
 ## Completed milestones
 
 - Created reusable ESPHome/devcontainer starter repo.
+- Created and pushed private GitHub repo.
 - Added reset-aware workbench wrapper pattern.
 - Added validation script pattern.
 - Added generic ESPHome examples.
