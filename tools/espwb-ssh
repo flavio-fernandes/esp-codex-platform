@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+WORKBENCH_IP="${WORKBENCH_IP:-192.0.2.10}"
+WORKBENCH_USER="${WORKBENCH_USER:-pi}"
+HOST_SSH_DIR="${HOST_SSH_DIR:-/host-ssh}"
+SSH_CONFIG="${SSH_CONFIG:-/dev/null}"
+
+usage() {
+  cat <<USAGE
+Usage:
+  tools/espwb-ssh remote command...
+
+Example:
+  tools/espwb-ssh hostname
+  tools/espwb-ssh test -x /usr/local/bin/espwb-local-esptool
+USAGE
+}
+
+if [[ "$#" -lt 1 ]]; then
+  usage >&2
+  exit 2
+fi
+
+need() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "missing required command: $1" >&2
+    exit 1
+  }
+}
+
+need ssh
+need ssh-keyscan
+need mktemp
+
+find_key() {
+  if [[ -n "${ESPWB_SSH_KEY:-}" ]]; then
+    [[ -r "$ESPWB_SSH_KEY" ]] || {
+      echo "ESPWB_SSH_KEY is set but not readable: $ESPWB_SSH_KEY" >&2
+      exit 1
+    }
+    printf '%s\n' "$ESPWB_SSH_KEY"
+    return 0
+  fi
+
+  local candidate
+  for candidate in \
+    "$HOST_SSH_DIR/id_ed25519" \
+    "$HOST_SSH_DIR/id_ecdsa" \
+    "$HOST_SSH_DIR/id_rsa"
+  do
+    if [[ -r "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  echo "No readable SSH key found under $HOST_SSH_DIR" >&2
+  echo "Set ESPWB_SSH_KEY to a readable key path if needed." >&2
+  exit 1
+}
+
+quote_arg() {
+  local s="$1"
+  printf "'%s'" "${s//\'/\'\\\'\'}"
+}
+
+quote_cmd() {
+  local arg first=1
+  for arg in "$@"; do
+    if [[ "$first" -eq 0 ]]; then
+      printf ' '
+    fi
+    quote_arg "$arg"
+    first=0
+  done
+}
+
+KEY_SRC="$(find_key)"
+TMPDIR_LOCAL="$(mktemp -d)"
+TMP_KEY="$TMPDIR_LOCAL/espwb_ssh_key"
+KNOWN_HOSTS="$TMPDIR_LOCAL/known_hosts"
+
+cleanup() {
+  rm -rf "$TMPDIR_LOCAL"
+}
+trap cleanup EXIT
+
+cp "$KEY_SRC" "$TMP_KEY"
+chmod 0600 "$TMP_KEY"
+
+ssh-keyscan -T 5 "$WORKBENCH_IP" > "$KNOWN_HOSTS" 2>/dev/null
+
+remote_shell_cmd="$(quote_cmd "$@")"
+
+ssh \
+  -i "$TMP_KEY" \
+  -F "$SSH_CONFIG" \
+  -o BatchMode=yes \
+  -o ConnectTimeout=10 \
+  -o UserKnownHostsFile="$KNOWN_HOSTS" \
+  -o StrictHostKeyChecking=yes \
+  "${WORKBENCH_USER}@${WORKBENCH_IP}" \
+  "$remote_shell_cmd"

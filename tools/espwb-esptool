@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+WORKBENCH_IP="${WORKBENCH_IP:-192.0.2.10}"
+WORKBENCH_USER="${WORKBENCH_USER:-pi}"
+ESPWB_SLOT="${ESPWB_SLOT:-SLOT1}"
+ALLOW_NON_SLOT1="${ALLOW_NON_SLOT1:-0}"
+HOST_SSH_DIR="${HOST_SSH_DIR:-/host-ssh}"
+SSH_CONFIG="${SSH_CONFIG:-/dev/null}"
+
+usage() {
+  cat <<USAGE
+Usage:
+  tools/espwb-esptool [esptool args...]
+
+Examples:
+  tools/espwb-esptool flash-id
+  tools/espwb-esptool chip-id
+  tools/espwb-esptool read-flash 0x3E0000 0x1000 artifacts/readback.bin
+  tools/espwb-esptool write-flash 0x3E0000 artifacts/readback.bin
+
+This wrapper SSHs to the workbench and runs:
+  /usr/local/bin/espwb-local-esptool ${ESPWB_SLOT} ...
+
+It intentionally avoids RFC2217 reset control for flashing.
+USAGE
+}
+
+if [[ "$#" -lt 1 ]]; then
+  usage >&2
+  exit 2
+fi
+
+if [[ "$ESPWB_SLOT" != "SLOT1" && "$ALLOW_NON_SLOT1" != "1" ]]; then
+  echo "Refusing to use ESPWB_SLOT=$ESPWB_SLOT; only SLOT1 is allowed by default." >&2
+  echo "Set ALLOW_NON_SLOT1=1 only after explicit approval." >&2
+  exit 2
+fi
+
+need() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "missing required command: $1" >&2
+    exit 1
+  }
+}
+
+need ssh
+need scp
+need ssh-keyscan
+need mktemp
+
+find_key() {
+  if [[ -n "${ESPWB_SSH_KEY:-}" ]]; then
+    [[ -r "$ESPWB_SSH_KEY" ]] || {
+      echo "ESPWB_SSH_KEY is set but not readable: $ESPWB_SSH_KEY" >&2
+      exit 1
+    }
+    printf '%s\n' "$ESPWB_SSH_KEY"
+    return 0
+  fi
+
+  local candidate
+  for candidate in \
+    "$HOST_SSH_DIR/id_ed25519" \
+    "$HOST_SSH_DIR/id_ecdsa" \
+    "$HOST_SSH_DIR/id_rsa"
+  do
+    if [[ -r "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  echo "No readable SSH key found under $HOST_SSH_DIR" >&2
+  echo "Set ESPWB_SSH_KEY to a readable key path if needed." >&2
+  exit 1
+}
+
+quote_arg() {
+  local s="$1"
+  printf "'%s'" "${s//\'/\'\\\'\'}"
+}
+
+quote_cmd() {
+  local arg first=1
+  for arg in "$@"; do
+    if [[ "$first" -eq 0 ]]; then
+      printf ' '
+    fi
+    quote_arg "$arg"
+    first=0
+  done
+}
+
+KEY_SRC="$(find_key)"
+TMPDIR_LOCAL="$(mktemp -d)"
+TMP_KEY="$TMPDIR_LOCAL/espwb_ssh_key"
+KNOWN_HOSTS="$TMPDIR_LOCAL/known_hosts"
+REMOTE_TMP=""
+
+cleanup() {
+  local rc=$?
+  if [[ -n "$REMOTE_TMP" && -f "$TMP_KEY" && -f "$KNOWN_HOSTS" ]]; then
+    ssh \
+      -i "$TMP_KEY" \
+      -o BatchMode=yes \
+      -o UserKnownHostsFile="$KNOWN_HOSTS" \
+      -o StrictHostKeyChecking=yes \
+      "${WORKBENCH_USER}@${WORKBENCH_IP}" \
+      "rm -rf $(quote_arg "$REMOTE_TMP")" >/dev/null 2>&1 || true
+  fi
+  rm -rf "$TMPDIR_LOCAL"
+  exit "$rc"
+}
+trap cleanup EXIT
+
+cp "$KEY_SRC" "$TMP_KEY"
+chmod 0600 "$TMP_KEY"
+
+ssh-keyscan -T 5 "$WORKBENCH_IP" > "$KNOWN_HOSTS" 2>/dev/null
+
+SSH_BASE=(
+  ssh
+  -i "$TMP_KEY"
+  -F "$SSH_CONFIG"
+  -o BatchMode=yes
+  -o ConnectTimeout=10
+  -o UserKnownHostsFile="$KNOWN_HOSTS"
+  -o StrictHostKeyChecking=yes
+)
+
+SCP_BASE=(
+  scp
+  -i "$TMP_KEY"
+  -F "$SSH_CONFIG"
+  -o BatchMode=yes
+  -o ConnectTimeout=10
+  -o UserKnownHostsFile="$KNOWN_HOSTS"
+  -o StrictHostKeyChecking=yes
+)
+
+WB="${WORKBENCH_USER}@${WORKBENCH_IP}"
+
+REMOTE_TMP="$("${SSH_BASE[@]}" "$WB" 'mktemp -d /tmp/espwb-upload-XXXXXX')"
+
+has_read_flash=0
+for arg in "$@"; do
+  if [[ "$arg" == "read-flash" ]]; then
+    has_read_flash=1
+    break
+  fi
+done
+
+last_index=$(("$#" - 1))
+idx=0
+remote_args=()
+readback_local=""
+readback_remote=""
+
+for arg in "$@"; do
+  if [[ "$has_read_flash" -eq 1 && "$idx" -eq "$last_index" ]]; then
+    readback_local="$arg"
+    readback_remote="$REMOTE_TMP/read-flash-output.bin"
+    remote_args+=("$readback_remote")
+  elif [[ -f "$arg" ]]; then
+    remote_file="$REMOTE_TMP/arg${idx}.bin"
+    "${SCP_BASE[@]}" "$arg" "$WB:$remote_file"
+    remote_args+=("$remote_file")
+  else
+    remote_args+=("$arg")
+  fi
+  idx=$((idx + 1))
+done
+
+remote_cmd=(/usr/local/bin/espwb-local-esptool "$ESPWB_SLOT" "${remote_args[@]}")
+remote_shell_cmd="$(quote_cmd "${remote_cmd[@]}")"
+
+"${SSH_BASE[@]}" "$WB" "$remote_shell_cmd"
+
+if [[ -n "$readback_local" ]]; then
+  mkdir -p "$(dirname "$readback_local")"
+  "${SCP_BASE[@]}" "$WB:$readback_remote" "$readback_local"
+fi

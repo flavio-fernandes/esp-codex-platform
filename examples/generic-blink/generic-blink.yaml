@@ -1,0 +1,22 @@
+esphome:
+  name: generic-blink
+  friendly_name: Generic Blink
+
+esp32:
+  board: featheresp32
+  framework:
+    type: arduino
+
+logger:
+
+output:
+  - platform: gpio
+    id: status_led
+    pin: GPIO13
+
+interval:
+  - interval: 500ms
+    then:
+      - output.turn_on: status_led
+      - delay: 250ms
+      - output.turn_off: status_led

@@ -1,0 +1,23 @@
+esphome:
+  name: generic-heartbeat
+  friendly_name: Generic Heartbeat
+
+esp32:
+  board: featheresp32
+  framework:
+    type: arduino
+
+logger:
+
+output:
+  - platform: gpio
+    id: status_led
+    pin: GPIO13
+
+interval:
+  - interval: 2s
+    then:
+      - logger.log: "heartbeat"
+      - output.turn_on: status_led
+      - delay: 100ms
+      - output.turn_off: status_led

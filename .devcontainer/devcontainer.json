@@ -1,0 +1,42 @@
+{
+  "name": "esp-codex-platform",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "ESPHOME_IMAGE": "ghcr.io/esphome/esphome:stable",
+      "USERNAME": "vscode",
+      "USER_UID": "1000",
+      "USER_GID": "1000"
+    }
+  },
+  "workspaceFolder": "/workspaces/esp-codex-platform",
+  "remoteUser": "vscode",
+  "containerEnv": {
+    "WORKBENCH_IP": "192.0.2.10",
+    "WORKBENCH_USER": "pi",
+    "WORKBENCH_URL": "http://192.0.2.10:8080",
+    "ESPWB_SLOT": "SLOT1",
+    "ESP_PORT": "rfc2217://192.0.2.10:4001?ign_set_control",
+    "PLATFORMIO_CORE_DIR": "/cache/platformio",
+    "PIP_CACHE_DIR": "/cache/pip"
+  },
+  "mounts": [
+    "source=${localEnv:HOME}/.ssh,target=/host-ssh,type=bind,readonly",
+    "source=esp-codex-platform-platformio,target=/cache/platformio,type=volume",
+    "source=esp-codex-platform-pip,target=/cache/pip,type=volume"
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "esphome.esphome-vscode",
+        "ms-vscode.vscode-serial-monitor",
+        "redhat.vscode-yaml"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "files.trimTrailingWhitespace": true,
+        "files.insertFinalNewline": true
+      }
+    }
+  }
+}

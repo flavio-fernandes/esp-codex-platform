@@ -1,0 +1,39 @@
+# Secrets
+.env
+.env.*
+!.env.example
+secrets.yaml
+**/secrets.yaml
+*.pem
+*.key
+*.p12
+*.pfx
+id_*
+*.token
+
+# ESPHome and PlatformIO generated content
+.esphome/
+**/.esphome/
+.pio/
+**/.pio/
+.cache/
+**/.cache/
+
+# Build outputs and firmware
+*.bin
+*.elf
+*.map
+*.uf2
+*.factory.bin
+*.ota.bin
+*.hex
+
+# Local artifacts and logs
+artifacts/
+*.log
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/settings.json
