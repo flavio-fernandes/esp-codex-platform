@@ -4,6 +4,7 @@
 !.env.example
 secrets.yaml
 **/secrets.yaml
+config/workbench.env
 *.pem
 *.key
 *.p12

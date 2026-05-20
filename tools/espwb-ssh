@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+CONFIG_FILE="${ESPWB_CONFIG_FILE:-config/workbench.env}"
+if [[ -r "$CONFIG_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$CONFIG_FILE"
+  set +a
+fi
+
 WORKBENCH_IP="${WORKBENCH_IP:-192.0.2.10}"
 WORKBENCH_USER="${WORKBENCH_USER:-pi}"
 HOST_SSH_DIR="${HOST_SSH_DIR:-/host-ssh}"

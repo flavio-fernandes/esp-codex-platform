@@ -18,9 +18,8 @@ start every future project with the same small, validated pieces:
 Set these values for your environment before using the workbench tools:
 
 ```bash
-export WORKBENCH_IP=192.0.2.10
-export WORKBENCH_USER=pi
-export ESPWB_SLOT=SLOT1
+cp config/workbench.env.example config/workbench.env
+$EDITOR config/workbench.env
 ```
 
 `SLOT1` is the safe default. Use other slots only after explicit approval in the

@@ -9,7 +9,8 @@
 
 ## Next project steps
 
-- Replace placeholder workbench values for the target environment.
+- Copy `config/workbench.env.example` to ignored `config/workbench.env` and
+  replace placeholder workbench values for the target environment.
 - Validate devcontainer startup.
 - Validate workbench API, SSH, and reset-aware esptool access.
 - Add one tiny board-specific ESPHome example.
