@@ -23,6 +23,7 @@ Mac -> VS Code SSH -> Linux host -> devcontainer -> workbench -> ESP board
 
 - RFC2217 is monitor-only.
 - Flashing goes through `tools/espwb-esptool`.
+- Serial monitoring goes through `tools/espwb-monitor`.
 - Use `SLOT1` only unless explicitly approved.
 - No secrets in git.
 - No `sudo` without explicit approval.

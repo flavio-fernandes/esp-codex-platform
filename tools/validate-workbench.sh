@@ -45,9 +45,15 @@ check_cmd() {
 
 check_cmd bash
 check_cmd curl
+check_cmd file
 check_cmd git
+check_cmd jq
+check_cmd rg
 check_cmd ssh
 check_cmd scp
+check_cmd shellcheck
+check_cmd tree
+check_cmd unzip
 check_cmd python3
 check_cmd esphome
 

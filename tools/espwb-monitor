@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+CONFIG_FILE="${ESPWB_CONFIG_FILE:-config/workbench.env}"
+if [[ -r "$CONFIG_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$CONFIG_FILE"
+  set +a
+fi
+
+WORKBENCH_IP="${WORKBENCH_IP:-192.0.2.10}"
+ESP_PORT="${ESP_PORT:-rfc2217://${WORKBENCH_IP}:4001?ign_set_control}"
+RECOVER_AFTER_MONITOR="${ESPWB_MONITOR_RECOVER:-1}"
+
+usage() {
+  cat <<USAGE
+Usage:
+  tools/espwb-monitor
+
+Examples:
+  tools/espwb-monitor
+
+This opens raw DUT serial logs over ESP_PORT:
+  ${ESP_PORT}
+
+When the monitor exits, it runs a reset-aware flash-id through tools/espwb-esptool
+by default because closing RFC2217 monitor sessions can perturb some targets.
+
+Set ESPWB_MONITOR_RECOVER=0 to skip the post-monitor flash-id.
+USAGE
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ "$#" -gt 0 ]]; then
+  echo "unexpected argument: $1" >&2
+  usage >&2
+  exit 2
+fi
+
+monitor_started=0
+recovery_done=0
+
+# shellcheck disable=SC2317,SC2329 # Invoked indirectly by the EXIT trap.
+recover_after_monitor() {
+  local rc=$?
+  if [[ "$monitor_started" == "1" && "$RECOVER_AFTER_MONITOR" == "1" && "$recovery_done" == "0" ]]; then
+    recovery_done=1
+    echo "== monitor exited; running reset-aware recovery check =="
+    set +e
+    tools/espwb-esptool flash-id
+    local recovery_rc=$?
+    set -e
+    if [[ "$recovery_rc" -ne 0 ]]; then
+      echo "post-monitor recovery check failed with exit code $recovery_rc" >&2
+    fi
+  elif [[ "$monitor_started" == "1" && "$RECOVER_AFTER_MONITOR" != "1" ]]; then
+    echo "== monitor exited; skipping recovery because ESPWB_MONITOR_RECOVER=0 =="
+  fi
+  exit "$rc"
+}
+trap recover_after_monitor EXIT
+
+echo "== monitoring raw DUT serial on $ESP_PORT =="
+echo "== press Ctrl-C to exit =="
+monitor_started=1
+set +e
+python3 - "$ESP_PORT" <<'PY'
+import sys
+
+import serial
+
+port = sys.argv[1]
+baud = 115200
+
+try:
+    with serial.serial_for_url(port, baudrate=baud, timeout=0.5) as ser:
+        while True:
+            chunk = ser.read(4096)
+            if chunk:
+                sys.stdout.buffer.write(chunk)
+                sys.stdout.buffer.flush()
+except KeyboardInterrupt:
+    pass
+PY
+monitor_rc=$?
+set -e
+
+exit "$monitor_rc"

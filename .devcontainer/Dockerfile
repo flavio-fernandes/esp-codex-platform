@@ -14,6 +14,7 @@ RUN apt-get update \
       bash \
       ca-certificates \
       curl \
+      file \
       git \
       iputils-ping \
       jq \
@@ -24,8 +25,14 @@ RUN apt-get update \
       procps \
       python3 \
       python3-pip \
+      ripgrep \
       rsync \
+      shellcheck \
+      tree \
+      unzip \
+      usbutils \
       vim-tiny \
+      xz-utils \
  && rm -rf /var/lib/apt/lists/*
 
 RUN python3 -m pip install --no-cache-dir --upgrade pyserial esptool \
