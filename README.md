@@ -203,6 +203,8 @@ different local camera is attached.
 - `.devcontainer/` - ESPHome devcontainer definition.
 - `config/workbench.env.example` - safe placeholder workbench settings.
 - `examples/generic-blink/` - tiny GPIO blink smoke test.
+- `examples/feathers3-rgb-blink/` - board-specific FeatherS3 RGB blink smoke
+  test.
 - `examples/generic-heartbeat/` - tiny heartbeat/logging smoke test.
 - `tools/espwb-ssh` - project-local SSH wrapper.
 - `tools/espwb-esptool` - reset-aware esptool/flashing wrapper.

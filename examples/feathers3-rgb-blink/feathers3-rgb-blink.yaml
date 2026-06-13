@@ -1,0 +1,53 @@
+substitutions:
+  board: um_feathers3
+  flash_size: 16MB
+  rgb_power_pin: GPIO39
+  rgb_data_pin: GPIO40
+
+esphome:
+  name: feathers3-rgb-blink
+  friendly_name: FeatherS3 RGB Blink
+  on_boot:
+    priority: 800
+    then:
+      - switch.turn_on: rgb_power
+
+esp32:
+  board: ${board}
+  flash_size: ${flash_size}
+  framework:
+    type: arduino
+
+logger:
+
+switch:
+  - platform: gpio
+    id: rgb_power
+    pin: ${rgb_power_pin}
+    restore_mode: ALWAYS_OFF
+
+light:
+  - platform: esp32_rmt_led_strip
+    id: status_rgb
+    internal: true
+    pin: ${rgb_data_pin}
+    num_leds: 1
+    rgb_order: GRB
+    chipset: ws2812
+    default_transition_length: 0s
+
+interval:
+  - interval: 3s
+    then:
+      - logger.log: "feathers3 rgb blink"
+      - switch.turn_on: rgb_power
+      - delay: 50ms
+      - light.turn_on:
+          id: status_rgb
+          red: 100%
+          green: 100%
+          blue: 100%
+          brightness: 75%
+          transition_length: 0s
+      - delay: 1s
+      - switch.turn_off: rgb_power

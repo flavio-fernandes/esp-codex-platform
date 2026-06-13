@@ -5,8 +5,10 @@ flashing path.
 
 - `generic-blink/` toggles one GPIO output.
 - `generic-heartbeat/` logs a heartbeat and toggles one GPIO output.
+- `feathers3-rgb-blink/` drives the Unexpected Maker FeatherS3 RGB LED
+  through its LDO2 power pin.
 
-Before compiling or flashing either example, edit the `board`, `flash_size`,
+Before compiling or flashing the generic examples, edit the `board`, `flash_size`,
 and `status_led_pin` substitutions at the top of the YAML so they match the
 board installed in your workbench slot. Always confirm the physical board
 identity first with:
@@ -18,3 +20,8 @@ devcontainer exec --workspace-folder . tools/espwb-esptool flash-id
 `flash-id` confirms the ESP chip family and flash size. It does not know which
 GPIO drives a visible LED, so use the board's docs or downstream hardware notes
 for `status_led_pin`.
+
+For Unexpected Maker FeatherS3 boards, `GPIO13` is the blue user LED, while the
+onboard RGB LED is a WS2812 on `GPIO40` powered by `GPIO39`/LDO2. Use
+`feathers3-rgb-blink/` when you want a board-specific blink that pulses that
+RGB LED power rail.
