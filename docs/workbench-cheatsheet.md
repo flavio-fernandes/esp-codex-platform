@@ -14,6 +14,10 @@
 - Optional camera capture requires a local V4L2 camera and `v4l2-ctl` on the
   Linux host.
 
+A Dev Container is the repo-defined Docker development environment in
+`.devcontainer/`; it keeps ESPHome and helper tooling consistent. Learn more at
+<https://containers.dev/>.
+
 ## Commands
 
 ```bash
@@ -34,10 +38,27 @@ devcontainer exec --workspace-folder . tools/validate-workbench.sh
 
 ## ESPHome validation
 
+Identify the board first:
+
+```bash
+devcontainer exec --workspace-folder . tools/espwb-esptool flash-id
+```
+
+Use the detected chip family and flash size to choose an ESPHome `board` value.
+The LED GPIO is not discoverable through `flash-id`; get it from the board or
+vendor docs.
+
+Edit the `board` and `status_led_pin` substitutions in
+`examples/generic-blink/generic-blink.yaml` for the actual board installed in
+the workbench slot before compiling or flashing it.
+
 ```bash
 devcontainer exec --workspace-folder . esphome config examples/generic-blink/generic-blink.yaml
 devcontainer exec --workspace-folder . esphome compile examples/generic-blink/generic-blink.yaml
 ```
+
+The first compile can take several minutes while PlatformIO fills the
+devcontainer cache.
 
 Only flash a factory image immediately after a successful compile of the same
 YAML. The ignored `.esphome/` build tree can contain stale binaries from older
@@ -51,7 +72,7 @@ devcontainer exec --workspace-folder . tools/espwb-esptool flash-id
 ```
 
 Verify the expected slot, chip family, and flash size for the board installed in
-the downstream project before flashing.
+the downstream project immediately before flashing.
 
 ## Recovery
 
@@ -64,6 +85,13 @@ First try a reset-aware identity check:
 ```bash
 devcontainer exec --workspace-folder . tools/espwb-esptool flash-id
 ```
+
+If `flash-id` fails with a pySerial write timeout and the workbench API reports
+the board in application or UF2 USB identity instead of Espressif ROM/download
+mode, the board has not entered the ROM bootloader. For boards like the
+UnexpectedMaker FeatherS3, the manual recovery sequence is BOOT held while
+RESET is pressed and released; persistent automation requires equivalent
+BOOT/RESET wiring in the workbench fixture.
 
 If the flashed app is bad, rebuild a known-good tiny example and flash its
 fresh factory image.

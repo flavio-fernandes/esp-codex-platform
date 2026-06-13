@@ -93,6 +93,44 @@ if tools/espwb-esptool flash-id >/tmp/espwb-flash-id.txt 2>&1; then
 else
   fail "reset-aware flash-id through tools/espwb-esptool failed"
   sed -n '1,140p' /tmp/espwb-flash-id.txt || true
+  printf '[INFO] SLOT state after flash-id failure:\n'
+  if curl -fsS --connect-timeout 5 --max-time 10 "$WORKBENCH_URL/api/devices" >/tmp/workbench-devices.json; then
+    python3 - "$ESPWB_SLOT" /tmp/workbench-devices.json <<'PY' || true
+import json
+import sys
+
+slot_name = sys.argv[1].upper()
+with open(sys.argv[2], "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+for item in data.get("slots", []):
+    if str(item.get("label", "")).upper() != slot_name:
+        continue
+    summary = {
+        "label": item.get("label"),
+        "state": item.get("state"),
+        "present": item.get("present"),
+        "running": item.get("running"),
+        "devnode": item.get("devnode"),
+        "gpio_boot": item.get("gpio_boot"),
+        "gpio_en": item.get("gpio_en"),
+        "usb_devices": item.get("usb_devices"),
+    }
+    print(summary)
+    products = item.get("usb_devices") or []
+    if products:
+        print(
+            "[HINT] If this is not an Espressif ROM/download-mode USB identity, "
+            "check that the workbench BOOT/EN GPIO lines are wired to this slot "
+            "and have the expected polarity."
+        )
+    break
+else:
+    print({"error": f"{slot_name} not found in workbench API"})
+PY
+  else
+    printf '[INFO] Could not read %s/api/devices\n' "$WORKBENCH_URL"
+  fi
 fi
 
 if [[ "$RUN_RFC2217_TEST" == "1" ]]; then

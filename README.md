@@ -47,6 +47,11 @@ Install these on the Linux host before using the quick start:
 - SSH access from the Linux host or devcontainer to the ESP workbench.
 - Optional: `v4l2-ctl` from `v4l-utils` when using the local camera helpers.
 
+This repo uses a Dev Container: a Docker-based development environment defined
+in `.devcontainer/` so ESPHome, esptool, and supporting CLI tools are consistent
+across checkouts. Curious readers can learn more at
+[containers.dev](https://containers.dev/).
+
 This repo's devcontainer supplies ESPHome, esptool, Python serial tooling,
 `curl`, `jq`, `rg`, `shellcheck`, and other project tools inside the container.
 It does not install Docker, the `devcontainer` CLI, SSH keys, or workbench
@@ -96,6 +101,23 @@ If `devcontainer` is not found, install the Dev Containers CLI on the Linux
 host or open the repository through VS Code's Dev Containers workflow. If
 `docker ps` requires `sudo`, fix the host Docker setup before continuing.
 
+Identify the board before changing or flashing examples:
+
+```bash
+devcontainer exec --workspace-folder . tools/espwb-esptool flash-id
+```
+
+Record the detected chip family and flash size. They must match the ESPHome
+`board` value you use later. The probe cannot discover the visible LED pin, so
+get that pin from the board silkscreen, vendor docs, or the downstream
+project's hardware notes.
+
+Check the blink example before building it. The committed defaults are a
+placeholder `featheresp32` board with `GPIO13` as the LED pin. In a fork, edit
+the `board` and `status_led_pin` substitutions in
+`examples/generic-blink/generic-blink.yaml` so they match the board installed
+in your workbench slot.
+
 Validate a tiny ESPHome example:
 
 ```bash
@@ -103,11 +125,17 @@ devcontainer exec --workspace-folder . esphome config examples/generic-blink/gen
 devcontainer exec --workspace-folder . esphome compile examples/generic-blink/generic-blink.yaml
 ```
 
-Identify the board before flashing:
+The first compile can take several minutes while PlatformIO downloads toolchains
+into the devcontainer cache. Later compiles are much faster.
+
+Check the board identity again immediately before flashing:
 
 ```bash
 devcontainer exec --workspace-folder . tools/espwb-esptool flash-id
 ```
+
+Confirm the detected chip family and flash size still match the `board` value
+you put in the blink YAML. Stop here if they do not match.
 
 Flash only after a successful compile of that same YAML:
 
@@ -126,6 +154,13 @@ devcontainer exec --workspace-folder . tools/espwb-esptool chip-id
 devcontainer exec --workspace-folder . tools/espwb-esptool read-flash 0x0 0x1000 artifacts/readback.bin
 devcontainer exec --workspace-folder . tools/espwb-esptool write-flash 0x0 path/to/firmware.factory.bin
 ```
+
+If `flash-id` fails with a pySerial write timeout and the workbench API reports
+the board in application or UF2 USB identity instead of Espressif ROM/download
+mode, the board has not entered the ROM bootloader. For boards like the
+UnexpectedMaker FeatherS3, the manual recovery sequence is BOOT held while
+RESET is pressed and released; unattended recovery needs equivalent BOOT/RESET
+wiring in the workbench fixture.
 
 `tools/espwb-monitor` opens raw DUT serial logs through RFC2217:
 

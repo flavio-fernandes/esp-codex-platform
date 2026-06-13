@@ -1,9 +1,14 @@
+substitutions:
+  # Compileable placeholder; change both values before flashing real hardware.
+  board: featheresp32
+  status_led_pin: GPIO13
+
 esphome:
   name: generic-blink
   friendly_name: Generic Blink
 
 esp32:
-  board: featheresp32
+  board: ${board}
   framework:
     type: arduino
 
@@ -12,7 +17,7 @@ logger:
 output:
   - platform: gpio
     id: status_led
-    pin: GPIO13
+    pin: ${status_led_pin}
 
 interval:
   - interval: 500ms
