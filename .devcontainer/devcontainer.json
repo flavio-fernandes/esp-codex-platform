@@ -1,5 +1,5 @@
 {
-  "name": "esp-codex-platform",
+  "name": "ESPHome workbench",
   "build": {
     "dockerfile": "Dockerfile",
     "args": {
@@ -9,7 +9,7 @@
       "USER_GID": "1000"
     }
   },
-  "workspaceFolder": "/workspaces/esp-codex-platform",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
   "remoteUser": "vscode",
   "containerEnv": {
     "WORKBENCH_IP": "192.0.2.10",
@@ -22,8 +22,8 @@
   },
   "mounts": [
     "source=${localEnv:HOME}/.ssh,target=/host-ssh,type=bind,readonly",
-    "source=esp-codex-platform-platformio,target=/cache/platformio,type=volume",
-    "source=esp-codex-platform-pip,target=/cache/pip,type=volume"
+    "source=esphome-workbench-platformio-cache,target=/cache/platformio,type=volume",
+    "source=esphome-workbench-pip-cache,target=/cache/pip,type=volume"
   ],
   "customizations": {
     "vscode": {

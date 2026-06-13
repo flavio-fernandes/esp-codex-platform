@@ -52,4 +52,4 @@ ENV PIP_CACHE_DIR=/cache/pip
 ENV PATH=/home/${USERNAME}/.local/bin:${PATH}
 
 USER ${USERNAME}
-WORKDIR /workspaces/esp-codex-platform
+WORKDIR /workspaces

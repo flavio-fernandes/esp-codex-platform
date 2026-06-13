@@ -63,12 +63,16 @@ The ESP workbench must already provide:
 
 ## Quick Start
 
-Clone the starter and enter the repo:
+Clone the starter into any directory name and enter it:
 
 ```bash
-git clone https://github.com/flavio-fernandes/esp-codex-platform.git
-cd esp-codex-platform
+git clone https://github.com/flavio-fernandes/esp-codex-platform.git my-esp-project
+cd my-esp-project
 ```
+
+The devcontainer uses the local folder basename, so commands work the same
+whether the checkout is named `my-esp-project`, `esp-codex-playground`, or
+something else.
 
 Create local-only workbench settings:
 
