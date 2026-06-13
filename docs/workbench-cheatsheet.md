@@ -44,11 +44,11 @@ Identify the board first:
 devcontainer exec --workspace-folder . tools/espwb-esptool flash-id
 ```
 
-Use the detected chip family and flash size to choose an ESPHome `board` value.
-The LED GPIO is not discoverable through `flash-id`; get it from the board or
-vendor docs.
+Use the detected chip family and flash size to choose ESPHome `board` and
+`flash_size` values. The LED GPIO is not discoverable through `flash-id`; get it
+from the board or vendor docs.
 
-Edit the `board` and `status_led_pin` substitutions in
+Edit the `board`, `flash_size`, and `status_led_pin` substitutions in
 `examples/generic-blink/generic-blink.yaml` for the actual board installed in
 the workbench slot before compiling or flashing it.
 

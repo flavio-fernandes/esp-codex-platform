@@ -6,10 +6,10 @@ flashing path.
 - `generic-blink/` toggles one GPIO output.
 - `generic-heartbeat/` logs a heartbeat and toggles one GPIO output.
 
-Before compiling or flashing either example, edit the `board` and
-`status_led_pin` substitutions at the top of the YAML so they match the board
-installed in your workbench slot. Always confirm the physical board identity
-first with:
+Before compiling or flashing either example, edit the `board`, `flash_size`,
+and `status_led_pin` substitutions at the top of the YAML so they match the
+board installed in your workbench slot. Always confirm the physical board
+identity first with:
 
 ```bash
 devcontainer exec --workspace-folder . tools/espwb-esptool flash-id

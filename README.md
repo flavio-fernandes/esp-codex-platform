@@ -113,8 +113,8 @@ get that pin from the board silkscreen, vendor docs, or the downstream
 project's hardware notes.
 
 Check the blink example before building it. The committed defaults are a
-placeholder `featheresp32` board with `GPIO13` as the LED pin. In a fork, edit
-the `board` and `status_led_pin` substitutions in
+placeholder `featheresp32` board with `4MB` flash and `GPIO13` as the LED pin.
+In a fork, edit the `board`, `flash_size`, and `status_led_pin` substitutions in
 `examples/generic-blink/generic-blink.yaml` so they match the board installed
 in your workbench slot.
 
@@ -134,8 +134,8 @@ Check the board identity again immediately before flashing:
 devcontainer exec --workspace-folder . tools/espwb-esptool flash-id
 ```
 
-Confirm the detected chip family and flash size still match the `board` value
-you put in the blink YAML. Stop here if they do not match.
+Confirm the detected chip family and flash size still match the `board` and
+`flash_size` values you put in the blink YAML. Stop here if they do not match.
 
 Flash only after a successful compile of that same YAML:
 

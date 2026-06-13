@@ -1,6 +1,7 @@
 substitutions:
-  # Compileable placeholder; change both values before flashing real hardware.
+  # Compileable placeholder; change these before flashing real hardware.
   board: featheresp32
+  flash_size: 4MB
   status_led_pin: GPIO13
 
 esphome:
@@ -9,6 +10,7 @@ esphome:
 
 esp32:
   board: ${board}
+  flash_size: ${flash_size}
   framework:
     type: arduino
 
