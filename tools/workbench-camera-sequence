@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+COUNT="${1:-4}"
+INTERVAL="${2:-3}"
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+OUTDIR="artifacts/workbench-camera-${STAMP}"
+
+usage() {
+  cat <<USAGE
+Usage:
+  tools/workbench-camera-sequence [count] [interval-seconds]
+
+Captures a timed JPEG sequence from the configured workbench camera.
+Default: 4 frames, 3 seconds apart.
+USAGE
+}
+
+if [[ "$COUNT" == "-h" || "$COUNT" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+case "$COUNT" in
+  ''|*[!0-9]*)
+    usage >&2
+    exit 2
+    ;;
+esac
+
+case "$INTERVAL" in
+  ''|*[!0-9]*)
+    usage >&2
+    exit 2
+    ;;
+esac
+
+mkdir -p "$OUTDIR"
+
+for ((idx = 1; idx <= COUNT; idx++)); do
+  printf -v frame "%s/frame-%02d.jpg" "$OUTDIR" "$idx"
+  tools/workbench-camera-capture "$frame" >/dev/null
+  printf '%s\n' "$frame"
+  if [[ "$idx" -lt "$COUNT" ]]; then
+    sleep "$INTERVAL"
+  fi
+done

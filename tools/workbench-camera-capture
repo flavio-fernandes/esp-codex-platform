@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+CONFIG_FILE="${ESPWB_CONFIG_FILE:-config/workbench.env}"
+if [[ -f "$CONFIG_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$CONFIG_FILE"
+fi
+
+DEVICE="${WORKBENCH_CAMERA_DEVICE:-/dev/v4l/by-id/usb-Creative_Technology_Ltd._Live__Cam_Chat_HD_VF0790_2015032504121-video-index0}"
+WIDTH="${WORKBENCH_CAMERA_WIDTH:-1280}"
+HEIGHT="${WORKBENCH_CAMERA_HEIGHT:-720}"
+SKIP="${WORKBENCH_CAMERA_SKIP:-10}"
+OUT=""
+
+usage() {
+  cat <<USAGE
+Usage:
+  tools/workbench-camera-capture [output.jpg]
+
+Environment:
+  WORKBENCH_CAMERA_DEVICE  V4L2 camera device path
+                           default /dev/v4l/by-id/usb-Creative_Technology_Ltd._Live__Cam_Chat_HD_VF0790_2015032504121-video-index0
+  WORKBENCH_CAMERA_WIDTH   capture width, default 1280
+  WORKBENCH_CAMERA_HEIGHT  capture height, default 720
+  WORKBENCH_CAMERA_SKIP    frames to skip before capture, default 10
+
+Default output:
+  artifacts/workbench-camera-<timestamp>.jpg
+USAGE
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ "$#" -gt 1 ]]; then
+  usage >&2
+  exit 2
+fi
+
+need() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "missing required command: $1" >&2
+    exit 1
+  }
+}
+
+need date
+need dirname
+need mkdir
+need v4l2-ctl
+
+if [[ ! -e "$DEVICE" ]]; then
+  echo "camera device not found: $DEVICE" >&2
+  exit 1
+fi
+
+OUT="${1:-artifacts/workbench-camera-$(date -u +%Y%m%dT%H%M%SZ).jpg}"
+mkdir -p "$(dirname "$OUT")"
+
+v4l2-ctl \
+  --device "$DEVICE" \
+  --set-fmt-video="width=${WIDTH},height=${HEIGHT},pixelformat=MJPG" \
+  --stream-mmap \
+  --stream-skip="$SKIP" \
+  --stream-count=1 \
+  --stream-to="$OUT" >/dev/null
+
+printf '%s\n' "$OUT"

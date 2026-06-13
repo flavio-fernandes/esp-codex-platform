@@ -7,6 +7,8 @@
 - Added reset-aware workbench wrapper pattern.
 - Added RFC2217 monitor wrapper pattern with reset-aware recovery.
 - Added validation script pattern.
+- Added optional generic workbench camera capture helpers.
+- Documented host, devcontainer, and workbench prerequisites.
 - Added generic ESPHome examples.
 
 ## Next project steps

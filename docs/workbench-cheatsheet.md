@@ -2,13 +2,17 @@
 
 ## Required assumptions
 
-- Docker works without `sudo` on the Linux host.
-- The devcontainer CLI works on the Linux host.
+- Docker Engine is installed and `docker ps` works without `sudo` on the Linux
+  host.
+- The Dev Containers CLI is installed as `devcontainer` on the Linux host, or
+  VS Code is opening the repo through its Dev Containers workflow.
 - Local workbench settings are in ignored `config/workbench.env`.
 - The workbench API is reachable at `${WORKBENCH_URL}`.
 - SSH to `${WORKBENCH_USER}@${WORKBENCH_IP}` works.
 - `/usr/local/bin/espwb-local-esptool` exists on the workbench.
 - `SLOT1` is the safe default slot.
+- Optional camera capture requires a local V4L2 camera and `v4l2-ctl` on the
+  Linux host.
 
 ## Commands
 
@@ -88,3 +92,17 @@ devcontainer exec --workspace-folder . tools/espwb-esptool flash-id
 
 `tools/validate-workbench.sh` skips its RFC2217 open/close test by default.
 Set `RUN_RFC2217_TEST=1` only when intentionally debugging the monitor path.
+
+## Camera capture
+
+The camera helpers run on the Linux host, not through RFC2217 and not through
+the workbench flashing path:
+
+```bash
+tools/workbench-camera-capture
+tools/workbench-camera-sequence 4 3
+```
+
+The default `WORKBENCH_CAMERA_DEVICE` is the stable `/dev/v4l/by-id/...` path
+for the current workbench camera. Override it in `config/workbench.env` when a
+different local camera is attached.

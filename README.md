@@ -35,6 +35,32 @@ Home Assistant entity IDs, device photos, firmware backups, generated binaries,
 or real secrets. Those belong in the downstream device project, and private
 values should stay in ignored local files.
 
+## Prerequisites
+
+Install these on the Linux host before using the quick start:
+
+- Docker Engine, with your user able to run `docker ps` without `sudo`.
+- Dev Containers CLI, available as `devcontainer` on `PATH`. VS Code with the
+  Dev Containers extension can also build/open the container, but the examples
+  below use the CLI.
+- Git, Bash, and an editor.
+- SSH access from the Linux host or devcontainer to the ESP workbench.
+- Optional: `v4l2-ctl` from `v4l-utils` when using the local camera helpers.
+
+This repo's devcontainer supplies ESPHome, esptool, Python serial tooling,
+`curl`, `jq`, `rg`, `shellcheck`, and other project tools inside the container.
+It does not install Docker, the `devcontainer` CLI, SSH keys, or workbench
+system services on the host.
+
+The ESP workbench must already provide:
+
+- A reachable workbench API at `${WORKBENCH_URL}`.
+- SSH for `${WORKBENCH_USER}@${WORKBENCH_IP}`.
+- The reset-aware helper `/usr/local/bin/espwb-local-esptool`.
+- RFC2217 serial service for monitoring at `${ESP_PORT}`.
+- A board installed in `SLOT1`, unless a downstream project explicitly
+  documents and approves another slot.
+
 ## Quick Start
 
 Clone the starter and enter the repo:
@@ -61,6 +87,10 @@ devcontainer up --workspace-folder .
 devcontainer exec --workspace-folder . esphome version
 devcontainer exec --workspace-folder . tools/validate-workbench.sh
 ```
+
+If `devcontainer` is not found, install the Dev Containers CLI on the Linux
+host or open the repository through VS Code's Dev Containers workflow. If
+`docker ps` requires `sudo`, fix the host Docker setup before continuing.
 
 Validate a tiny ESPHome example:
 
@@ -104,6 +134,18 @@ gives the reset-aware helper a chance to recover targets that are perturbed by
 closing an RFC2217 session. Set `ESPWB_MONITOR_RECOVER=0` only when you are
 intentionally debugging monitor close behavior.
 
+`tools/workbench-camera-capture` captures one JPEG from a local V4L2 camera on
+the Linux host, and `tools/workbench-camera-sequence` captures a timed sequence:
+
+```bash
+tools/workbench-camera-capture
+tools/workbench-camera-sequence 4 3
+```
+
+By default it uses the current workbench camera's stable `/dev/v4l/by-id/...`
+path. Override `WORKBENCH_CAMERA_DEVICE` in `config/workbench.env` when a
+different local camera is attached.
+
 ## Safety Rules
 
 - Keep `SLOT1` as the safe default unless a downstream project explicitly
@@ -126,6 +168,8 @@ intentionally debugging monitor close behavior.
 - `tools/espwb-ssh` - project-local SSH wrapper.
 - `tools/espwb-esptool` - reset-aware esptool/flashing wrapper.
 - `tools/espwb-monitor` - RFC2217 serial monitor wrapper.
+- `tools/workbench-camera-capture` - optional local V4L2 camera snapshot.
+- `tools/workbench-camera-sequence` - optional timed camera snapshots.
 - `tools/validate-workbench.sh` - local toolchain and workbench validation.
 - `docs/workbench-cheatsheet.md` - command reference.
 - `docs/public-release-checklist.md` - public hygiene checks.
