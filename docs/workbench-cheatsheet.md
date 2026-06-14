@@ -86,6 +86,23 @@ First try a reset-aware identity check:
 devcontainer exec --workspace-folder . tools/espwb-esptool flash-id
 ```
 
+`tools/espwb-esptool` also asks the workbench API to recover/release the slot
+after the RFC2217 portal has restarted. This catches ESP32-S3 USB-Serial/JTAG
+cases where the portal reopening `/dev/ttyACM*` would otherwise leave the board
+visually wedged again.
+
+If OpenOCD is available, `tools/espwb-esptool` also checks whether the CPU is
+still sitting in ESP32-S3 ROM/download code after recovery. If it prints
+`still appears to be in ESP32-S3 ROM/download code`, the flash can be valid and
+verified while the app is still not running. Release BOOT and reset the board,
+or fix the workbench BOOT/EN fixture wiring/state so the recovery path can do
+that unattended. Use `ESPWB_VERIFY_APP_BOOT=0` only while debugging that check.
+
+If pressing the physical RESET button makes the freshly flashed app run, keep
+the firmware and focus on the reset path. That result means the board was left
+in ROM/download mode after flashing, but the image itself is good. The automated
+path needs to reproduce a plain reset with BOOT released.
+
 If `flash-id` fails with a pySerial write timeout and the workbench API reports
 the board in application or UF2 USB identity instead of Espressif ROM/download
 mode, the board has not entered the ROM bootloader. For boards like the
@@ -111,12 +128,23 @@ devcontainer exec --workspace-folder . tools/espwb-monitor
 
 Set `ESPWB_MONITOR_RECOVER=0` only when intentionally debugging the RFC2217
 close behavior and you do not want the automatic post-monitor reset check.
+The wrapper also requires `ESPWB_MONITOR_ALLOW_UNRECOVERED_EXIT=1` before it
+will skip recovery. Do not use either setting for normal monitoring.
+
+Avoid opening the workbench `/dev/ttyACM*` device directly with ad hoc serial
+tools. On ESP32-S3 USB-Serial/JTAG boards, control-line changes from a plain
+serial open can leave the device in ROM download mode or otherwise visually
+wedged. Use `tools/espwb-monitor`, then let its automatic recovery check run.
 
 If closing a serial monitor perturbs the target device, recover through:
 
 ```bash
 devcontainer exec --workspace-folder . tools/espwb-esptool flash-id
 ```
+
+That command is intentionally used as a recovery reset check: it enters the ROM
+bootloader through the workbench helper, reads the flash identity, and hard
+resets the board back toward normal app boot.
 
 `tools/validate-workbench.sh` skips its RFC2217 open/close test by default.
 Set `RUN_RFC2217_TEST=1` only when intentionally debugging the monitor path.

@@ -155,6 +155,26 @@ devcontainer exec --workspace-folder . tools/espwb-esptool read-flash 0x0 0x1000
 devcontainer exec --workspace-folder . tools/espwb-esptool write-flash 0x0 path/to/firmware.factory.bin
 ```
 
+After each operation, the wrapper asks the workbench API to recover/release the
+slot after the RFC2217 portal has restarted. This extra step protects
+ESP32-S3 USB-Serial/JTAG boards from getting wedged when the portal reopens the
+serial device. Set `ESPWB_POST_OPERATION_RECOVER=0` only when debugging that
+recovery path.
+
+When OpenOCD is available for the slot, the wrapper also checks that the chip
+did not stay in ESP32-S3 ROM/download code after recovery. If it reports an
+error like `still appears to be in ESP32-S3 ROM/download code`, the flash may
+have verified successfully but the application is not running. Release BOOT and
+reset the board, or fix the workbench BOOT/EN fixture wiring/state so unattended
+recovery can do the same. Set `ESPWB_VERIFY_APP_BOOT=0` only while debugging
+that verification path.
+
+If a manual press of the board RESET button makes the freshly flashed app start,
+the firmware image is valid. Treat that as evidence that the remaining problem
+is the automated post-flash release/reset path, not the ESPHome YAML. On
+ESP32-S3 USB-Serial/JTAG boards this often means the board was left in
+`DOWNLOAD(USB/UART0)` and needs a plain reset with BOOT released.
+
 If `flash-id` fails with a pySerial write timeout and the workbench API reports
 the board in application or UF2 USB identity instead of Espressif ROM/download
 mode, the board has not entered the ROM bootloader. For boards like the
@@ -171,7 +191,19 @@ devcontainer exec --workspace-folder . tools/espwb-monitor
 By default it runs `tools/espwb-esptool flash-id` when the monitor exits. This
 gives the reset-aware helper a chance to recover targets that are perturbed by
 closing an RFC2217 session. Set `ESPWB_MONITOR_RECOVER=0` only when you are
-intentionally debugging monitor close behavior.
+intentionally debugging monitor close behavior, and only together with
+`ESPWB_MONITOR_ALLOW_UNRECOVERED_EXIT=1`. If a board is blank or stuck after a
+monitor session, recover it with:
+
+```bash
+devcontainer exec --workspace-folder . tools/espwb-esptool flash-id
+```
+
+Do not open the workbench `/dev/ttyACM*` device directly with ad hoc serial
+tools for routine monitoring. On ESP32-S3 USB-Serial/JTAG boards, plain serial
+opens can toggle control lines and leave the board in ROM download mode or a
+visually wedged state. Use `tools/espwb-monitor` and let its post-monitor
+recovery run.
 
 `tools/workbench-camera-capture` captures one JPEG from a local V4L2 camera on
 the Linux host, and `tools/workbench-camera-sequence` captures a timed sequence:

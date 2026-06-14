@@ -10,11 +10,14 @@ if [[ -r "$CONFIG_FILE" ]]; then
 fi
 
 WORKBENCH_IP="${WORKBENCH_IP:-192.0.2.10}"
+WORKBENCH_URL="${WORKBENCH_URL:-http://${WORKBENCH_IP}:8080}"
 WORKBENCH_USER="${WORKBENCH_USER:-pi}"
 ESPWB_SLOT="${ESPWB_SLOT:-SLOT1}"
 ALLOW_NON_SLOT1="${ALLOW_NON_SLOT1:-0}"
 HOST_SSH_DIR="${HOST_SSH_DIR:-/host-ssh}"
 SSH_CONFIG="${SSH_CONFIG:-/dev/null}"
+ESPWB_POST_OPERATION_RECOVER="${ESPWB_POST_OPERATION_RECOVER:-1}"
+ESPWB_VERIFY_APP_BOOT="${ESPWB_VERIFY_APP_BOOT:-1}"
 
 usage() {
   cat <<USAGE
@@ -31,6 +34,11 @@ This wrapper SSHs to the workbench and runs:
   /usr/local/bin/espwb-local-esptool ${ESPWB_SLOT} ...
 
 It intentionally avoids RFC2217 reset control for flashing.
+After the esptool operation, it asks the workbench API to recover/release the
+slot back toward firmware boot because restarting the RFC2217 portal can
+perturb ESP32-S3 USB-Serial/JTAG targets.
+
+Set ESPWB_POST_OPERATION_RECOVER=0 only when debugging that recovery path.
 USAGE
 }
 
@@ -56,6 +64,7 @@ need ssh
 need scp
 need ssh-keyscan
 need mktemp
+need curl
 
 find_key() {
   if [[ -n "${ESPWB_SSH_KEY:-}" ]]; then
@@ -98,6 +107,101 @@ quote_cmd() {
     quote_arg "$arg"
     first=0
   done
+}
+
+post_operation_recover() {
+  if [[ "$ESPWB_POST_OPERATION_RECOVER" != "1" ]]; then
+    echo "== skipping post-operation workbench recovery because ESPWB_POST_OPERATION_RECOVER=0 =="
+    echo "== target may need tools/espwb-esptool flash-id before it runs normally again =="
+    return 0
+  fi
+
+  echo "== asking workbench API to recover ${ESPWB_SLOT} after serial operation =="
+  if ! curl -fsS \
+    -X POST "${WORKBENCH_URL}/api/serial/recover" \
+    -H 'Content-Type: application/json' \
+    -d "{\"slot\":\"${ESPWB_SLOT}\"}" >/dev/null; then
+    echo "WARNING: workbench post-operation recovery request failed; target may need manual reset" >&2
+    return 0
+  fi
+
+  local ready=false
+  local attempts_left=10
+  while [[ "$attempts_left" -gt 0 ]]; do
+    if curl -fsS "${WORKBENCH_URL}/api/devices" \
+      | python3 -c 'import json, sys
+slot = sys.argv[1].upper()
+data = json.load(sys.stdin)
+for item in data.get("slots", []):
+    if str(item.get("label", "")).upper() != slot:
+        continue
+    sys.exit(0 if item.get("present") and item.get("running") and not item.get("recovering") else 1)
+sys.exit(1)' "$ESPWB_SLOT" >/dev/null 2>&1
+    then
+      ready=true
+      break
+    fi
+    attempts_left=$((attempts_left - 1))
+    sleep 1
+  done
+
+  if [[ "$ready" == "true" ]]; then
+    echo "== workbench reports ${ESPWB_SLOT} recovered and portal running =="
+  else
+    echo "WARNING: workbench recovery did not report ${ESPWB_SLOT} running before timeout" >&2
+  fi
+
+  verify_app_boot
+}
+
+verify_app_boot() {
+  if [[ "$ESPWB_VERIFY_APP_BOOT" != "1" ]]; then
+    echo "== skipping post-operation app boot verification because ESPWB_VERIFY_APP_BOOT=0 =="
+    return 0
+  fi
+
+  if ! command -v nc >/dev/null 2>&1; then
+    echo "WARNING: nc is unavailable; skipping OpenOCD app boot verification" >&2
+    return 0
+  fi
+
+  local openocd_port
+  openocd_port="$(
+    curl -fsS "${WORKBENCH_URL}/api/devices" \
+      | python3 -c 'import json, sys
+slot = sys.argv[1].upper()
+data = json.load(sys.stdin)
+for item in data.get("slots", []):
+    if str(item.get("label", "")).upper() == slot:
+        port = item.get("openocd_telnet_port")
+        print(port if port else "")
+        sys.exit(0)
+sys.exit(0)' "$ESPWB_SLOT" 2>/dev/null || true
+  )"
+
+  if [[ -z "$openocd_port" ]]; then
+    return 0
+  fi
+
+  local pc_output pc
+  pc_output="$(
+    {
+      printf 'esp32s3.cpu0 get_reg pc\nexit\n'
+      sleep 1
+    } | nc -w 5 "$WORKBENCH_IP" "$openocd_port" 2>/dev/null | tr -d '\000' || true
+  )"
+  pc="$(printf '%s\n' "$pc_output" | sed -n 's/.*pc \(0x[0-9a-fA-F]\+\).*/\1/p' | tail -n 1)"
+
+  case "$pc" in
+    0x40041*|0x40048*)
+      cat >&2 <<EOF
+ERROR: ${ESPWB_SLOT} still appears to be in ESP32-S3 ROM/download code after recovery (PC=${pc}).
+The workbench may be holding BOOT low or otherwise resetting into DOWNLOAD(USB/UART0),
+so the flashed application is not running yet.
+EOF
+      return 73
+      ;;
+  esac
 }
 
 KEY_SRC="$(find_key)"
@@ -189,3 +293,5 @@ if [[ -n "$readback_local" ]]; then
   mkdir -p "$(dirname "$readback_local")"
   "${SCP_BASE[@]}" "$WB:$readback_remote" "$readback_local"
 fi
+
+post_operation_recover

@@ -12,6 +12,7 @@ fi
 WORKBENCH_IP="${WORKBENCH_IP:-192.0.2.10}"
 ESP_PORT="${ESP_PORT:-rfc2217://${WORKBENCH_IP}:4001?ign_set_control}"
 RECOVER_AFTER_MONITOR="${ESPWB_MONITOR_RECOVER:-1}"
+ALLOW_UNRECOVERED_EXIT="${ESPWB_MONITOR_ALLOW_UNRECOVERED_EXIT:-0}"
 
 usage() {
   cat <<USAGE
@@ -27,7 +28,11 @@ This opens raw DUT serial logs over ESP_PORT:
 When the monitor exits, it runs a reset-aware flash-id through tools/espwb-esptool
 by default because closing RFC2217 monitor sessions can perturb some targets.
 
-Set ESPWB_MONITOR_RECOVER=0 to skip the post-monitor flash-id.
+Skipping recovery is intentionally hard because ESP32-S3 USB-Serial/JTAG boards
+can be left in ROM download mode or another visually wedged state after monitor
+close. To skip recovery for deliberate debugging only, set both:
+  ESPWB_MONITOR_RECOVER=0
+  ESPWB_MONITOR_ALLOW_UNRECOVERED_EXIT=1
 USAGE
 }
 
@@ -39,6 +44,20 @@ fi
 if [[ "$#" -gt 0 ]]; then
   echo "unexpected argument: $1" >&2
   usage >&2
+  exit 2
+fi
+
+if [[ "$RECOVER_AFTER_MONITOR" != "1" && "$ALLOW_UNRECOVERED_EXIT" != "1" ]]; then
+  cat >&2 <<'EOF'
+Refusing to skip post-monitor recovery.
+
+Closing RFC2217 monitor sessions can perturb ESP32-S3 USB-Serial/JTAG targets.
+Use the default recovery path for normal monitoring, or set both variables only
+when intentionally debugging monitor-close behavior:
+
+  ESPWB_MONITOR_RECOVER=0
+  ESPWB_MONITOR_ALLOW_UNRECOVERED_EXIT=1
+EOF
   exit 2
 fi
 
@@ -59,7 +78,8 @@ recover_after_monitor() {
       echo "post-monitor recovery check failed with exit code $recovery_rc" >&2
     fi
   elif [[ "$monitor_started" == "1" && "$RECOVER_AFTER_MONITOR" != "1" ]]; then
-    echo "== monitor exited; skipping recovery because ESPWB_MONITOR_RECOVER=0 =="
+    echo "== monitor exited; skipping recovery because ESPWB_MONITOR_RECOVER=0 and ESPWB_MONITOR_ALLOW_UNRECOVERED_EXIT=1 =="
+    echo "== target may need tools/espwb-esptool flash-id before it runs normally again =="
   fi
   exit "$rc"
 }
