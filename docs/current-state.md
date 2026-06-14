@@ -19,12 +19,18 @@ Mac -> VS Code SSH -> Linux host -> devcontainer -> workbench -> ESP board
 5. Flash the generated factory image through `tools/espwb-esptool write-flash`.
 6. Validate the real hardware behavior.
 
+After esptool operations, `tools/espwb-esptool` asks the workbench API to
+recover the slot. The helper treats either API `running=true` or a reachable
+slot RFC2217 TCP port as a healthy post-operation portal state.
+
 ## Safety rules
 
 - RFC2217 is monitor-only.
 - Flashing goes through `tools/espwb-esptool`.
 - Serial monitoring goes through `tools/espwb-monitor`.
 - Use `SLOT1` only unless explicitly approved.
+- Keep `.devcontainer/devcontainer.json` UID handling aligned with the
+  Dockerfile-created `vscode` user.
 - No secrets in git.
 - No `sudo` without explicit approval.
 - No GitHub push unless explicitly approved.

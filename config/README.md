@@ -33,3 +33,16 @@ Useful values to set locally:
 - `ESPWB_SSH_KEY` when the default `/host-ssh` mount is not enough.
 - `WORKBENCH_CAMERA_DEVICE` when using `tools/workbench-camera-capture` on a
   host with multiple V4L2 cameras.
+
+Debug-only toggles:
+
+- `ESPWB_POST_OPERATION_RECOVER=0` skips the esptool wrapper's post-operation
+  workbench recovery request.
+- `ESPWB_VERIFY_APP_BOOT=0` skips the optional OpenOCD ROM/download-mode check.
+- `ESPWB_MONITOR_RECOVER=0` skips post-monitor recovery only when paired with
+  `ESPWB_MONITOR_ALLOW_UNRECOVERED_EXIT=1`.
+- `RUN_RFC2217_TEST=1` enables the validation script's intentional RFC2217
+  open/close test.
+
+Do not set these in normal use; they are for isolating workbench reset,
+recovery, or monitor behavior.

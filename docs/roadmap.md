@@ -6,6 +6,8 @@
 - Created and pushed private GitHub repo.
 - Added reset-aware workbench wrapper pattern.
 - Added RFC2217 monitor wrapper pattern with reset-aware recovery.
+- Added post-operation recovery status fallback for stale workbench API
+  `running` state when the RFC2217 TCP port is reachable.
 - Added validation script pattern.
 - Added optional generic workbench camera capture helpers.
 - Documented host, devcontainer, and workbench prerequisites.
@@ -15,7 +17,7 @@
 
 - Copy `config/workbench.env.example` to ignored `config/workbench.env` and
   replace placeholder workbench values for the target environment.
-- Validate devcontainer startup.
+- Validate devcontainer startup after any `.devcontainer/` change.
 - Validate workbench API, SSH, and reset-aware esptool access.
 - Validate serial monitoring only when intentionally needed; keep RFC2217
   open/close tests opt-in.

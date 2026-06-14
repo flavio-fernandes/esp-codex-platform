@@ -36,6 +36,11 @@ devcontainer exec --workspace-folder . rg --version
 devcontainer exec --workspace-folder . tools/validate-workbench.sh
 ```
 
+The committed devcontainer creates the `vscode` user itself and keeps
+`updateRemoteUserUID` disabled. If that setting is removed, Dev Containers may
+build an extra UID-adjustment image and Docker may warn about an empty generated
+`BASE_IMAGE`.
+
 ## Using SLOT2
 
 `SLOT1` is the default and safest target. To use `SLOT2`, pass both
@@ -110,9 +115,22 @@ devcontainer exec --workspace-folder . tools/espwb-esptool flash-id
 ```
 
 `tools/espwb-esptool` also asks the workbench API to recover/release the slot
-after the RFC2217 portal has restarted. This catches ESP32-S3 USB-Serial/JTAG
-cases where the portal reopening `/dev/ttyACM*` would otherwise leave the board
-visually wedged again.
+after the RFC2217 portal has restarted. It first trusts the API's `running`
+status. If the slot is present and recovery has ended, but the API state is
+stale, it also checks whether the slot's RFC2217 TCP port is reachable. This
+catches ESP32-S3 USB-Serial/JTAG cases where the portal reopening `/dev/ttyACM*`
+would otherwise leave the board visually wedged again.
+
+Healthy recovery output looks like one of these:
+
+```text
+== workbench reports SLOT1 recovered and portal running ==
+== workbench reports SLOT1 recovered; RFC2217 TCP port is reachable ==
+```
+
+If recovery still warns, read the printed slot status. `present=true` with a TCP
+connection error points at the portal path; `recovering=true` or a ROM/download
+mode app-boot error points back at the reset/release path.
 
 If OpenOCD is available, `tools/espwb-esptool` also checks whether the CPU is
 still sitting in ESP32-S3 ROM/download code after recovery. If it prints

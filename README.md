@@ -103,6 +103,11 @@ If `devcontainer` is not found, install the Dev Containers CLI on the Linux
 host or open the repository through VS Code's Dev Containers workflow. If
 `docker ps` requires `sudo`, fix the host Docker setup before continuing.
 
+The devcontainer creates its own `vscode` user and sets
+`updateRemoteUserUID: false` in `.devcontainer/devcontainer.json`. Keep that
+setting unless the Dockerfile user model changes; it avoids Dev Containers'
+extra UID-rewrite image and the BuildKit warning that rewrite can produce.
+
 Identify the board before changing or flashing examples:
 
 ```bash
@@ -158,10 +163,23 @@ devcontainer exec --workspace-folder . tools/espwb-esptool write-flash 0x0 path/
 ```
 
 After each operation, the wrapper asks the workbench API to recover/release the
-slot after the RFC2217 portal has restarted. This extra step protects
-ESP32-S3 USB-Serial/JTAG boards from getting wedged when the portal reopens the
-serial device. Set `ESPWB_POST_OPERATION_RECOVER=0` only when debugging that
-recovery path.
+slot after the RFC2217 portal has restarted. It accepts the API's `running`
+status when available, and falls back to checking the slot's RFC2217 TCP port
+when the API state is stale but the portal is reachable. This extra step
+protects ESP32-S3 USB-Serial/JTAG boards from getting wedged when the portal
+reopens the serial device. Set `ESPWB_POST_OPERATION_RECOVER=0` only when
+debugging that recovery path.
+
+A healthy recovery usually ends with one of these messages:
+
+```text
+== workbench reports SLOT1 recovered and portal running ==
+== workbench reports SLOT1 recovered; RFC2217 TCP port is reachable ==
+```
+
+If recovery still times out, the wrapper prints the last slot status it saw,
+including values such as `present`, `running`, `state`, `last_error`, and any
+TCP connection error.
 
 When OpenOCD is available for the slot, the wrapper also checks that the chip
 did not stay in ESP32-S3 ROM/download code after recovery. If it reports an
