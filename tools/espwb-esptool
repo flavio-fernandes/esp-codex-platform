@@ -125,29 +125,89 @@ post_operation_recover() {
   fi
 
   local ready=false
+  local ready_via=""
+  local last_status=""
+  local status_file="${TMPDIR_LOCAL}/recovery-status.txt"
   local attempts_left=10
   while [[ "$attempts_left" -gt 0 ]]; do
-    if curl -fsS "${WORKBENCH_URL}/api/devices" \
+    if ready_via="$(curl -fsS "${WORKBENCH_URL}/api/devices" \
       | python3 -c 'import json, sys
+import socket
+
 slot = sys.argv[1].upper()
+fallback_host = sys.argv[2]
 data = json.load(sys.stdin)
 for item in data.get("slots", []):
     if str(item.get("label", "")).upper() != slot:
         continue
-    sys.exit(0 if item.get("present") and item.get("running") and not item.get("recovering") else 1)
-sys.exit(1)' "$ESPWB_SLOT" >/dev/null 2>&1
+    if not item.get("present") or item.get("recovering"):
+        print(
+            "present={} recovering={} state={} last_error={}".format(
+                item.get("present"),
+                item.get("recovering"),
+                item.get("state"),
+                item.get("last_error"),
+            ),
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if item.get("running"):
+        print("api")
+        sys.exit(0)
+
+    tcp_port = item.get("tcp_port")
+    host = data.get("host_ip") or fallback_host
+    if tcp_port:
+        try:
+            with socket.create_connection((host, int(tcp_port)), timeout=0.75):
+                print("tcp")
+                sys.exit(0)
+        except OSError as exc:
+            print(
+                "present={} running={} state={} tcp_port={} last_error={} tcp_error={}".format(
+                    item.get("present"),
+                    item.get("running"),
+                    item.get("state"),
+                    tcp_port,
+                    item.get("last_error"),
+                    exc,
+                ),
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    print(
+        "present={} running={} state={} last_error={}".format(
+            item.get("present"),
+            item.get("running"),
+            item.get("state"),
+            item.get("last_error"),
+        ),
+        file=sys.stderr,
+    )
+    sys.exit(1)
+print(f"{slot} not found", file=sys.stderr)
+sys.exit(1)' "$ESPWB_SLOT" "$WORKBENCH_IP" 2>"$status_file")"
     then
       ready=true
       break
     fi
+    last_status="$(cat "$status_file" 2>/dev/null || true)"
     attempts_left=$((attempts_left - 1))
     sleep 1
   done
 
   if [[ "$ready" == "true" ]]; then
-    echo "== workbench reports ${ESPWB_SLOT} recovered and portal running =="
+    if [[ "$ready_via" == "tcp" ]]; then
+      echo "== workbench reports ${ESPWB_SLOT} recovered; RFC2217 TCP port is reachable =="
+    else
+      echo "== workbench reports ${ESPWB_SLOT} recovered and portal running =="
+    fi
   else
     echo "WARNING: workbench recovery did not report ${ESPWB_SLOT} running before timeout" >&2
+    if [[ -n "$last_status" ]]; then
+      echo "WARNING: last ${ESPWB_SLOT} recovery status: ${last_status}" >&2
+    fi
   fi
 
   verify_app_boot
