@@ -87,7 +87,9 @@ $EDITOR config/workbench.env
 ```
 
 Keep `config/workbench.env` private. The committed example uses documentation
-placeholders such as `192.0.2.10`.
+placeholders such as `192.0.2.10`. Values in `config/workbench.env` act as
+local defaults; command-specific environment variables such as
+`ESPWB_SLOT=SLOT2` still override them.
 
 Build or open the devcontainer:
 

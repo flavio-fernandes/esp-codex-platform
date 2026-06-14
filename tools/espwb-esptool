@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-CONFIG_FILE="${ESPWB_CONFIG_FILE:-config/workbench.env}"
-if [[ -r "$CONFIG_FILE" ]]; then
-  set -a
-  # shellcheck disable=SC1090
-  source "$CONFIG_FILE"
-  set +a
-fi
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tools/lib/workbench-env
+source "${SCRIPT_DIR}/lib/workbench-env"
+load_workbench_env \
+  ESPWB_SLOT ALLOW_NON_SLOT1 ESPWB_POST_OPERATION_RECOVER ESPWB_VERIFY_APP_BOOT \
+  ESPWB_SSH_KEY
 
 WORKBENCH_IP="${WORKBENCH_IP:-192.0.2.10}"
 WORKBENCH_URL="${WORKBENCH_URL:-http://${WORKBENCH_IP}:8080}"

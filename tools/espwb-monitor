@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-CONFIG_FILE="${ESPWB_CONFIG_FILE:-config/workbench.env}"
-if [[ -r "$CONFIG_FILE" ]]; then
-  set -a
-  # shellcheck disable=SC1090
-  source "$CONFIG_FILE"
-  set +a
-fi
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tools/lib/workbench-env
+source "${SCRIPT_DIR}/lib/workbench-env"
+load_workbench_env \
+  ESP_PORT ESPWB_MONITOR_RECOVER ESPWB_MONITOR_ALLOW_UNRECOVERED_EXIT \
+  ESPWB_SLOT ALLOW_NON_SLOT1
 
 WORKBENCH_IP="${WORKBENCH_IP:-192.0.2.10}"
 ESP_PORT="${ESP_PORT:-rfc2217://${WORKBENCH_IP}:4001?ign_set_control}"

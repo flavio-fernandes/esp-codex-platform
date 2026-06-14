@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-CONFIG_FILE="${ESPWB_CONFIG_FILE:-config/workbench.env}"
-if [[ -f "$CONFIG_FILE" ]]; then
-  # shellcheck disable=SC1090
-  source "$CONFIG_FILE"
-fi
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tools/lib/workbench-env
+source "${SCRIPT_DIR}/lib/workbench-env"
+load_workbench_env \
+  WORKBENCH_CAMERA_DEVICE WORKBENCH_CAMERA_WIDTH WORKBENCH_CAMERA_HEIGHT WORKBENCH_CAMERA_SKIP
 
 DEVICE="${WORKBENCH_CAMERA_DEVICE:-/dev/v4l/by-id/usb-Creative_Technology_Ltd._Live__Cam_Chat_HD_VF0790_2015032504121-video-index0}"
 WIDTH="${WORKBENCH_CAMERA_WIDTH:-1280}"

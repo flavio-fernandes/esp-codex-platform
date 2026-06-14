@@ -7,6 +7,8 @@ flashing path.
 - `generic-heartbeat/` logs a heartbeat and toggles one GPIO output.
 - `feathers3-rgb-blink/` drives the Unexpected Maker FeatherS3 RGB LED
   through its LDO2 power pin.
+- `esp32-devkit-gpio2-blink/` targets common CP2102 ESP32 DevKit-style boards
+  with an ESP32-D0WD chip, 4MB flash, and a visible blue LED on GPIO2.
 
 Before compiling or flashing the generic examples, edit the `board`, `flash_size`,
 and `status_led_pin` substitutions at the top of the YAML so they match the

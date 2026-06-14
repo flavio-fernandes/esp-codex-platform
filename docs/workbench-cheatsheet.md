@@ -36,6 +36,29 @@ devcontainer exec --workspace-folder . rg --version
 devcontainer exec --workspace-folder . tools/validate-workbench.sh
 ```
 
+## Using SLOT2
+
+`SLOT1` is the default and safest target. To use `SLOT2`, pass both
+`ESPWB_SLOT=SLOT2` and `ALLOW_NON_SLOT1=1` so the command makes the non-default
+slot choice explicit.
+
+```bash
+devcontainer exec --workspace-folder . env ESPWB_SLOT=SLOT2 ALLOW_NON_SLOT1=1 tools/espwb-esptool flash-id
+devcontainer exec --workspace-folder . env ESPWB_SLOT=SLOT2 ALLOW_NON_SLOT1=1 tools/espwb-esptool chip-id
+devcontainer exec --workspace-folder . env ESPWB_SLOT=SLOT2 ALLOW_NON_SLOT1=1 tools/espwb-esptool write-flash 0x0 path/to/firmware.factory.bin
+```
+
+For an RFC2217 serial monitor on `SLOT2`, use port `4002` and keep the same
+post-monitor recovery guardrails:
+
+```bash
+devcontainer exec --workspace-folder . bash -lc 'set -a; source config/workbench.env; set +a; ESPWB_SLOT=SLOT2 ALLOW_NON_SLOT1=1 ESP_PORT="rfc2217://${WORKBENCH_IP}:4002?ign_set_control" tools/espwb-monitor'
+```
+
+The workbench helper can discover the SLOT2 serial device from the workbench
+API. Do not substitute `/dev/ttyUSB*` or `/dev/ttyACM*` paths by hand unless
+you are intentionally debugging the workbench itself.
+
 ## ESPHome validation
 
 Identify the board first:
