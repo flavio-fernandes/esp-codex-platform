@@ -11,6 +11,7 @@
   },
   "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
   "remoteUser": "vscode",
+  "updateRemoteUserUID": false,
   "containerEnv": {
     "WORKBENCH_IP": "192.0.2.10",
     "WORKBENCH_USER": "pi",
