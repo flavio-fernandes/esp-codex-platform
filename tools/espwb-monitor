@@ -6,12 +6,15 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/workbench-env"
 load_workbench_env \
   ESP_PORT ESPWB_MONITOR_RECOVER ESPWB_MONITOR_ALLOW_UNRECOVERED_EXIT \
-  ESPWB_SLOT ALLOW_NON_SLOT1
+  ESPWB_SLOT ALLOW_NON_SLOT1 ESPWB_MONITOR_IDLE_TIMEOUT \
+  ESPWB_MONITOR_MAX_TIME
 
 WORKBENCH_IP="${WORKBENCH_IP:-192.0.2.10}"
 ESP_PORT="${ESP_PORT:-rfc2217://${WORKBENCH_IP}:4001?ign_set_control}"
 RECOVER_AFTER_MONITOR="${ESPWB_MONITOR_RECOVER:-1}"
 ALLOW_UNRECOVERED_EXIT="${ESPWB_MONITOR_ALLOW_UNRECOVERED_EXIT:-0}"
+ESPWB_MONITOR_IDLE_TIMEOUT="${ESPWB_MONITOR_IDLE_TIMEOUT:-300}"
+ESPWB_MONITOR_MAX_TIME="${ESPWB_MONITOR_MAX_TIME:-0}"
 
 usage() {
   cat <<USAGE
@@ -23,6 +26,10 @@ Examples:
 
 This opens raw DUT serial logs over ESP_PORT:
   ${ESP_PORT}
+
+By default the monitor exits after ${ESPWB_MONITOR_IDLE_TIMEOUT}s without serial
+bytes. Set ESPWB_MONITOR_IDLE_TIMEOUT=0 for an unbounded live monitor.
+Set ESPWB_MONITOR_MAX_TIME to cap total monitor runtime.
 
 When the monitor exits, it runs a reset-aware flash-id through tools/espwb-esptool
 by default because closing RFC2217 monitor sessions can perturb some targets.
@@ -86,23 +93,52 @@ trap recover_after_monitor EXIT
 
 echo "== monitoring raw DUT serial on $ESP_PORT =="
 echo "== press Ctrl-C to exit =="
+if [[ "$ESPWB_MONITOR_IDLE_TIMEOUT" != "0" ]]; then
+  echo "== idle timeout: ${ESPWB_MONITOR_IDLE_TIMEOUT}s without serial bytes =="
+fi
+if [[ "$ESPWB_MONITOR_MAX_TIME" != "0" ]]; then
+  echo "== max runtime: ${ESPWB_MONITOR_MAX_TIME}s =="
+fi
 monitor_started=1
+python_bin="${PYTHON:-python3}"
+if [[ -x ".pio/platformio-core/penv/bin/python" ]]; then
+  python_bin=".pio/platformio-core/penv/bin/python"
+fi
 set +e
-python3 - "$ESP_PORT" <<'PY'
+"$python_bin" - "$ESP_PORT" "$ESPWB_MONITOR_IDLE_TIMEOUT" "$ESPWB_MONITOR_MAX_TIME" <<'PY'
+import time
 import sys
 
 import serial
 
 port = sys.argv[1]
+idle_timeout = float(sys.argv[2])
+max_time = float(sys.argv[3])
 baud = 115200
 
 try:
     with serial.serial_for_url(port, baudrate=baud, timeout=0.5) as ser:
+        started = time.monotonic()
+        last_rx = started
         while True:
             chunk = ser.read(4096)
             if chunk:
                 sys.stdout.buffer.write(chunk)
                 sys.stdout.buffer.flush()
+                last_rx = time.monotonic()
+            now = time.monotonic()
+            if idle_timeout > 0 and now - last_rx >= idle_timeout:
+                print(
+                    f"\n== monitor idle timeout after {idle_timeout:.0f}s ==",
+                    file=sys.stderr,
+                )
+                break
+            if max_time > 0 and now - started >= max_time:
+                print(
+                    f"\n== monitor max runtime reached after {max_time:.0f}s ==",
+                    file=sys.stderr,
+                )
+                break
 except KeyboardInterrupt:
     pass
 PY

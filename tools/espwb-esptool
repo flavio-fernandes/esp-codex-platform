@@ -6,7 +6,10 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/workbench-env"
 load_workbench_env \
   ESPWB_SLOT ALLOW_NON_SLOT1 ESPWB_POST_OPERATION_RECOVER ESPWB_VERIFY_APP_BOOT \
-  ESPWB_SSH_KEY
+  ESPWB_SSH_KEY ESPWB_API_CONNECT_TIMEOUT ESPWB_API_MAX_TIME \
+  ESPWB_RECOVER_API_MAX_TIME ESPWB_SSH_CONNECT_TIMEOUT \
+  ESPWB_SSH_SERVER_ALIVE_INTERVAL ESPWB_SSH_SERVER_ALIVE_COUNT_MAX \
+  ESPWB_KNOWN_HOSTS
 
 WORKBENCH_IP="${WORKBENCH_IP:-192.0.2.10}"
 WORKBENCH_URL="${WORKBENCH_URL:-http://${WORKBENCH_IP}:8080}"
@@ -17,6 +20,13 @@ HOST_SSH_DIR="${HOST_SSH_DIR:-/host-ssh}"
 SSH_CONFIG="${SSH_CONFIG:-/dev/null}"
 ESPWB_POST_OPERATION_RECOVER="${ESPWB_POST_OPERATION_RECOVER:-1}"
 ESPWB_VERIFY_APP_BOOT="${ESPWB_VERIFY_APP_BOOT:-1}"
+ESPWB_API_CONNECT_TIMEOUT="${ESPWB_API_CONNECT_TIMEOUT:-3}"
+ESPWB_API_MAX_TIME="${ESPWB_API_MAX_TIME:-8}"
+ESPWB_RECOVER_API_MAX_TIME="${ESPWB_RECOVER_API_MAX_TIME:-20}"
+ESPWB_SSH_CONNECT_TIMEOUT="${ESPWB_SSH_CONNECT_TIMEOUT:-10}"
+ESPWB_SSH_SERVER_ALIVE_INTERVAL="${ESPWB_SSH_SERVER_ALIVE_INTERVAL:-5}"
+ESPWB_SSH_SERVER_ALIVE_COUNT_MAX="${ESPWB_SSH_SERVER_ALIVE_COUNT_MAX:-2}"
+ESPWB_KNOWN_HOSTS="${ESPWB_KNOWN_HOSTS:-}"
 
 usage() {
   cat <<USAGE
@@ -108,6 +118,18 @@ quote_cmd() {
   done
 }
 
+api_curl() {
+  curl --connect-timeout "$ESPWB_API_CONNECT_TIMEOUT" \
+    --max-time "$ESPWB_API_MAX_TIME" \
+    "$@"
+}
+
+recover_curl() {
+  curl --connect-timeout "$ESPWB_API_CONNECT_TIMEOUT" \
+    --max-time "$ESPWB_RECOVER_API_MAX_TIME" \
+    "$@"
+}
+
 post_operation_recover() {
   if [[ "$ESPWB_POST_OPERATION_RECOVER" != "1" ]]; then
     echo "== skipping post-operation workbench recovery because ESPWB_POST_OPERATION_RECOVER=0 =="
@@ -116,7 +138,7 @@ post_operation_recover() {
   fi
 
   echo "== asking workbench API to recover ${ESPWB_SLOT} after serial operation =="
-  if ! curl -fsS \
+  if ! recover_curl -fsS \
     -X POST "${WORKBENCH_URL}/api/serial/recover" \
     -H 'Content-Type: application/json' \
     -d "{\"slot\":\"${ESPWB_SLOT}\"}" >/dev/null; then
@@ -130,7 +152,7 @@ post_operation_recover() {
   local status_file="${TMPDIR_LOCAL}/recovery-status.txt"
   local attempts_left=10
   while [[ "$attempts_left" -gt 0 ]]; do
-    if ready_via="$(curl -fsS "${WORKBENCH_URL}/api/devices" \
+    if ready_via="$(api_curl -fsS "${WORKBENCH_URL}/api/devices" \
       | python3 -c 'import json, sys
 import socket
 
@@ -226,7 +248,7 @@ verify_app_boot() {
 
   local openocd_port
   openocd_port="$(
-    curl -fsS "${WORKBENCH_URL}/api/devices" \
+    api_curl -fsS "${WORKBENCH_URL}/api/devices" \
       | python3 -c 'import json, sys
 slot = sys.argv[1].upper()
 data = json.load(sys.stdin)
@@ -275,6 +297,9 @@ cleanup() {
     ssh \
       -i "$TMP_KEY" \
       -o BatchMode=yes \
+      -o ConnectTimeout="$ESPWB_SSH_CONNECT_TIMEOUT" \
+      -o ServerAliveInterval="$ESPWB_SSH_SERVER_ALIVE_INTERVAL" \
+      -o ServerAliveCountMax="$ESPWB_SSH_SERVER_ALIVE_COUNT_MAX" \
       -o UserKnownHostsFile="$KNOWN_HOSTS" \
       -o StrictHostKeyChecking=yes \
       "${WORKBENCH_USER}@${WORKBENCH_IP}" \
@@ -288,14 +313,26 @@ trap cleanup EXIT
 cp "$KEY_SRC" "$TMP_KEY"
 chmod 0600 "$TMP_KEY"
 
-ssh-keyscan -T 5 "$WORKBENCH_IP" > "$KNOWN_HOSTS" 2>/dev/null
+if [[ -n "$ESPWB_KNOWN_HOSTS" ]]; then
+  [[ -r "$ESPWB_KNOWN_HOSTS" ]] || {
+    echo "ESPWB_KNOWN_HOSTS is set but not readable: $ESPWB_KNOWN_HOSTS" >&2
+    exit 1
+  }
+  cp "$ESPWB_KNOWN_HOSTS" "$KNOWN_HOSTS"
+elif ! ssh-keyscan -T "$ESPWB_SSH_CONNECT_TIMEOUT" "$WORKBENCH_IP" > "$KNOWN_HOSTS" 2>/dev/null; then
+  echo "error: could not read SSH host key from $WORKBENCH_IP" >&2
+  echo "Set ESPWB_KNOWN_HOSTS to a known_hosts file containing the workbench key if ssh-keyscan is unreliable." >&2
+  exit 1
+fi
 
 SSH_BASE=(
   ssh
   -i "$TMP_KEY"
   -F "$SSH_CONFIG"
   -o BatchMode=yes
-  -o ConnectTimeout=10
+  -o ConnectTimeout="$ESPWB_SSH_CONNECT_TIMEOUT"
+  -o ServerAliveInterval="$ESPWB_SSH_SERVER_ALIVE_INTERVAL"
+  -o ServerAliveCountMax="$ESPWB_SSH_SERVER_ALIVE_COUNT_MAX"
   -o UserKnownHostsFile="$KNOWN_HOSTS"
   -o StrictHostKeyChecking=yes
 )
@@ -305,14 +342,19 @@ SCP_BASE=(
   -i "$TMP_KEY"
   -F "$SSH_CONFIG"
   -o BatchMode=yes
-  -o ConnectTimeout=10
+  -o ConnectTimeout="$ESPWB_SSH_CONNECT_TIMEOUT"
+  -o ServerAliveInterval="$ESPWB_SSH_SERVER_ALIVE_INTERVAL"
+  -o ServerAliveCountMax="$ESPWB_SSH_SERVER_ALIVE_COUNT_MAX"
   -o UserKnownHostsFile="$KNOWN_HOSTS"
   -o StrictHostKeyChecking=yes
 )
 
 WB="${WORKBENCH_USER}@${WORKBENCH_IP}"
 
-REMOTE_TMP="$("${SSH_BASE[@]}" "$WB" 'mktemp -d /tmp/espwb-upload-XXXXXX')"
+if ! REMOTE_TMP="$("${SSH_BASE[@]}" "$WB" 'mktemp -d /tmp/espwb-upload-XXXXXX')"; then
+  echo "error: could not create remote temporary directory on $WB" >&2
+  exit 1
+fi
 
 has_read_flash=0
 for arg in "$@"; do
@@ -335,7 +377,10 @@ for arg in "$@"; do
     remote_args+=("$readback_remote")
   elif [[ -f "$arg" ]]; then
     remote_file="$REMOTE_TMP/arg${idx}.bin"
-    "${SCP_BASE[@]}" "$arg" "$WB:$remote_file"
+    if ! "${SCP_BASE[@]}" "$arg" "$WB:$remote_file"; then
+      echo "error: could not upload $arg to $WB:$remote_file" >&2
+      exit 1
+    fi
     remote_args+=("$remote_file")
   else
     remote_args+=("$arg")
@@ -346,11 +391,17 @@ done
 remote_cmd=(/usr/local/bin/espwb-local-esptool "$ESPWB_SLOT" "${remote_args[@]}")
 remote_shell_cmd="$(quote_cmd "${remote_cmd[@]}")"
 
-"${SSH_BASE[@]}" "$WB" "$remote_shell_cmd"
+if ! "${SSH_BASE[@]}" "$WB" "$remote_shell_cmd"; then
+  echo "error: remote esptool command failed on $WB" >&2
+  exit 1
+fi
 
 if [[ -n "$readback_local" ]]; then
   mkdir -p "$(dirname "$readback_local")"
-  "${SCP_BASE[@]}" "$WB:$readback_remote" "$readback_local"
+  if ! "${SCP_BASE[@]}" "$WB:$readback_remote" "$readback_local"; then
+    echo "error: could not download readback file from $WB:$readback_remote" >&2
+    exit 1
+  fi
 fi
 
 post_operation_recover

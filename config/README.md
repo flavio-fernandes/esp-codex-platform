@@ -31,8 +31,15 @@ Useful values to set locally:
 - `ESPWB_SLOT`, which should stay `SLOT1` unless a downstream project clearly
   documents a different safe slot.
 - `ESPWB_SSH_KEY` when the default `/host-ssh` mount is not enough.
+- `ESPWB_KNOWN_HOSTS` when the workbench is reachable by SSH but `ssh-keyscan`
+  is unreliable during recovery. The helper still uses strict host-key
+  checking against the supplied known_hosts file.
 - `WORKBENCH_CAMERA_DEVICE` when using `tools/workbench-camera-capture` on a
   host with multiple V4L2 cameras.
+- `ESPWB_MONITOR_IDLE_TIMEOUT`, default `300`, exits a quiet RFC2217 monitor so
+  post-monitor recovery still runs. Set to `0` only for an intentional
+  unbounded live monitor.
+- `ESPWB_MONITOR_MAX_TIME`, default `0`, optionally caps total monitor runtime.
 
 Debug-only toggles:
 

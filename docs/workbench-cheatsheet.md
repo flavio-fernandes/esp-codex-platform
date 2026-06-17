@@ -132,6 +132,14 @@ If recovery still warns, read the printed slot status. `present=true` with a TCP
 connection error points at the portal path; `recovering=true` or a ROM/download
 mode app-boot error points back at the reset/release path.
 
+If the SSH host-key pre-scan times out during recovery but the workbench key is
+already trusted locally, point the helper at that file while keeping strict
+host-key checking:
+
+```bash
+devcontainer exec --workspace-folder . env ESPWB_KNOWN_HOSTS=/host-ssh/known_hosts tools/espwb-esptool flash-id
+```
+
 If OpenOCD is available, `tools/espwb-esptool` also checks whether the CPU is
 still sitting in ESP32-S3 ROM/download code after recovery. If it prints
 `still appears to be in ESP32-S3 ROM/download code`, the flash can be valid and
@@ -166,6 +174,12 @@ can perturb some targets:
 ```bash
 devcontainer exec --workspace-folder . tools/espwb-monitor
 ```
+
+By default the wrapper exits after `ESPWB_MONITOR_IDLE_TIMEOUT` seconds without
+serial bytes, default `300`, so a quiet or wedged RFC2217 session still reaches
+the automatic recovery check. Set `ESPWB_MONITOR_IDLE_TIMEOUT=0` only for an
+intentional unbounded live monitor. Set `ESPWB_MONITOR_MAX_TIME` to a non-zero
+number of seconds when a test should have a hard total runtime cap.
 
 Set `ESPWB_MONITOR_RECOVER=0` only when intentionally debugging the RFC2217
 close behavior and you do not want the automatic post-monitor reset check.
