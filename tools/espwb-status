@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+cd "$REPO_ROOT"
+
+# shellcheck source=tools/lib/workbench-env
+source "tools/lib/workbench-env"
+load_workbench_env \
+  ESPWB_SLOT WORKBENCH_IP WORKBENCH_URL ESPWB_MONITOR_PORT \
+  ESPWB_API_CONNECT_TIMEOUT ESPWB_API_MAX_TIME
+
+slot="${ESPWB_SLOT:-SLOT1}"
+workbench_ip="${WORKBENCH_IP:-192.0.2.10}"
+workbench_url="${WORKBENCH_URL:-http://${workbench_ip}:8080}"
+monitor_port="${ESPWB_MONITOR_PORT:-4001}"
+api_connect_timeout="${ESPWB_API_CONNECT_TIMEOUT:-3}"
+api_max_time="${ESPWB_API_MAX_TIME:-8}"
+
+check_port() {
+  local label="$1"
+  local port="$2"
+  local suffix=""
+  if [[ "$label" == "serial" ]]; then
+    suffix="; portal socket only, application liveness not verified"
+  fi
+
+  if nc -z -w "$api_connect_timeout" "$workbench_ip" "$port" >/dev/null 2>&1; then
+    echo "${label}: reachable (${workbench_ip}:${port}${suffix})"
+    return 0
+  fi
+  echo "${label}: not reachable (${workbench_ip}:${port}${suffix})"
+  return 1
+}
+
+echo "Workbench host: $workbench_ip"
+echo "Workbench slot: $slot"
+
+status_file="$(mktemp)"
+cleanup() {
+  local rc=$?
+  rm -f "$status_file"
+  exit "$rc"
+}
+trap cleanup EXIT
+
+if ping -c 1 -W "$api_connect_timeout" "$workbench_ip" >/dev/null 2>&1; then
+  echo "host: reachable"
+else
+  echo "host: not reachable"
+fi
+
+check_port "ssh" 22 || true
+check_port "api" 8080 || true
+check_port "serial" "$monitor_port" || true
+
+if curl --connect-timeout "$api_connect_timeout" --max-time "$api_max_time" \
+  -fsS "${workbench_url}/api/devices" >"$status_file"; then
+  python3 - "$slot" "$status_file" <<'PY'
+import json
+import sys
+
+slot = sys.argv[1].upper()
+with open(sys.argv[2], "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+print("api.host_ip={}".format(data.get("host_ip")))
+for item in data.get("slots", []):
+    if str(item.get("label", "")).upper() != slot:
+        continue
+
+    print(
+        "slot: present={} running={} recovering={} state={} tcp_port={} "
+        "devnode={} last_error={}".format(
+            item.get("present"),
+            item.get("running"),
+            item.get("recovering"),
+            item.get("state"),
+            item.get("tcp_port"),
+            item.get("devnode"),
+            item.get("last_error"),
+        )
+    )
+
+    usb_devices = item.get("usb_devices") or []
+    if not usb_devices:
+        print("slot.usb: none")
+        break
+
+    for usb in usb_devices:
+        product = usb.get("product") or "unknown product"
+        vid_pid = str(usb.get("vid_pid") or "unknown VID:PID")
+        print("slot.usb: {} ({})".format(product, vid_pid))
+
+        identity = vid_pid.lower()
+        if identity == "239a:00e5":
+            print("slot.usb.mode: Adafruit MagTag TinyUF2 bootloader")
+            print("slot.note: application serial commands cannot respond in TinyUF2")
+        elif identity == "239a:80e5":
+            print("slot.usb.mode: Adafruit MagTag application USB identity")
+        elif identity == "303a:0002":
+            print("slot.usb.mode: Espressif ESP32-S2 ROM bootloader")
+    break
+else:
+    print("slot: not found")
+PY
+else
+  echo "api.devices: unavailable"
+fi
