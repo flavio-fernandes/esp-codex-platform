@@ -1,0 +1,297 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+cd "$REPO_ROOT"
+
+# shellcheck source=tools/lib/workbench-env
+source "tools/lib/workbench-env"
+load_workbench_env \
+  ESPWB_SLOT ESPWB_MONITOR_PORT ESPWB_UF2_VOLUME_LABEL \
+  ESPWB_UF2_MIN_ADDRESS ESPWB_UF2_VERIFY_TIMEOUT \
+  ESPWB_UF2_VERIFY_INTERVAL ESPWB_LOCAL_PORTAL_SERVICE
+
+slot="${ESPWB_SLOT:-SLOT1}"
+monitor_port="${ESPWB_MONITOR_PORT:-4001}"
+volume_label="${ESPWB_UF2_VOLUME_LABEL:-}"
+min_address="${ESPWB_UF2_MIN_ADDRESS:-}"
+verify_timeout="${ESPWB_UF2_VERIFY_TIMEOUT:-20}"
+verify_interval="${ESPWB_UF2_VERIFY_INTERVAL:-1}"
+portal_service="${ESPWB_LOCAL_PORTAL_SERVICE:-rfc2217-portal}"
+mode=""
+uf2=""
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  tools/espwb-uf2-write --app-only --label VOLUME [--min-address ADDRESS] firmware.uf2
+
+Example for MagTag app-only iteration:
+  tools/espwb-uf2-write --app-only --label MAGTAGBOOT --min-address 0x10000 firmware.uf2
+
+Options:
+  --app-only            Required safety declaration for this transport.
+  --full                Always refused. Full recovery must use an ESP ROM loader.
+  --label VOLUME        UF2 filesystem label, such as MAGTAGBOOT.
+  --min-address ADDRESS Refuse UF2 blocks below this target address.
+
+The helper verifies every requested UF2 payload against CURRENT.UF2, including
+final partial payload blocks. It never treats TinyUF2 as a full recovery path.
+USAGE
+}
+
+while (($#)); do
+  case "$1" in
+    --app-only)
+      [[ -z "$mode" ]] || { echo "error: choose only one mode" >&2; exit 2; }
+      mode="app-only"
+      ;;
+    --full)
+      mode="full"
+      ;;
+    --label)
+      shift
+      [[ "$#" -gt 0 ]] || { echo "error: --label needs a value" >&2; exit 2; }
+      volume_label="$1"
+      ;;
+    --min-address)
+      shift
+      [[ "$#" -gt 0 ]] || { echo "error: --min-address needs a value" >&2; exit 2; }
+      min_address="$1"
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --*)
+      echo "error: unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+    *)
+      [[ -z "$uf2" ]] || { echo "error: only one UF2 file may be supplied" >&2; exit 2; }
+      uf2="$1"
+      ;;
+  esac
+  shift
+done
+
+if [[ "$mode" == "full" ]]; then
+  cat >&2 <<'EOF2'
+error: refusing full flash through TinyUF2.
+
+TinyUF2 is a bootloader currently executing from flash. It is appropriate for
+app-only iteration, not for rewriting its own bootloader or partition recovery
+surface. Use direct USB through the ESP ROM bootloader, or another known-good
+ROM-loader path, for full recovery.
+EOF2
+  exit 2
+fi
+
+[[ "$mode" == "app-only" ]] || { echo "error: --app-only is required" >&2; usage >&2; exit 2; }
+[[ -n "$volume_label" ]] || { echo "error: --label is required" >&2; exit 2; }
+[[ -n "$uf2" && -f "$uf2" ]] || { echo "error: UF2 file is missing: ${uf2:-none}" >&2; exit 1; }
+[[ -x "tools/espwb-ssh" ]] || { echo "error: tools/espwb-ssh is missing or not executable" >&2; exit 1; }
+command -v base64 >/dev/null 2>&1 || { echo "error: base64 is required" >&2; exit 1; }
+command -v python3 >/dev/null 2>&1 || { echo "error: python3 is required" >&2; exit 1; }
+
+python3 - "$uf2" "$min_address" <<'PY'
+import struct
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+minimum = int(sys.argv[2], 0) if sys.argv[2] else None
+raw = path.read_bytes()
+if not raw or len(raw) % 512:
+    raise SystemExit(f"{path}: UF2 size must be a non-zero multiple of 512 bytes")
+
+addresses = []
+for offset in range(0, len(raw), 512):
+    block = raw[offset : offset + 512]
+    magic0, magic1, flags, address, size, block_no, block_count, family = struct.unpack(
+        "<IIIIIIII", block[:32]
+    )
+    end_magic = struct.unpack("<I", block[508:512])[0]
+    if magic0 != 0x0A324655 or magic1 != 0x9E5D5157 or end_magic != 0x0AB16F30:
+        raise SystemExit(f"{path}: invalid UF2 magic in block at file offset {offset}")
+    if size <= 0 or size > 476:
+        raise SystemExit(f"{path}: invalid UF2 payload size {size} at target 0x{address:x}")
+    if minimum is not None and address < minimum:
+        raise SystemExit(
+            f"{path}: target 0x{address:x} is below app-only minimum 0x{minimum:x}"
+        )
+    addresses.append(address)
+
+print(
+    f"UF2 preflight: blocks={len(addresses)} "
+    f"first=0x{min(addresses):x} last=0x{max(addresses):x}"
+)
+PY
+
+remote_uf2="/tmp/espwb-uf2-${slot,,}-$(date +%s)-$$.uf2"
+echo "== uploading app-only UF2 to ${slot} workbench =="
+base64 "$uf2" | tools/espwb-ssh sh -c 'umask 077; base64 -d > "$1"' sh "$remote_uf2"
+
+set +e
+tools/espwb-ssh bash -s -- \
+  "$remote_uf2" "$volume_label" "$slot" "$portal_service" \
+  "$monitor_port" "$verify_timeout" "$verify_interval" <<'REMOTE'
+set -Eeuo pipefail
+
+remote_uf2="$1"
+volume_label="$2"
+slot="$3"
+portal_service="$4"
+monitor_port="$5"
+verify_timeout="$6"
+verify_interval="$7"
+mountpoint_dir="$(mktemp -d /tmp/espwb-uf2-mount-XXXXXX)"
+
+port_is_listening() {
+  python3 - "$monitor_port" <<'PY'
+import socket
+import sys
+try:
+    with socket.create_connection(("127.0.0.1", int(sys.argv[1])), timeout=1.0):
+        pass
+except OSError:
+    raise SystemExit(1)
+PY
+}
+
+restart_portal() {
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    echo "== restarting ${portal_service} (attempt ${attempt}/5) =="
+    sudo systemctl restart "$portal_service" >/dev/null 2>&1 || true
+    if sudo systemctl is-active --quiet "$portal_service"; then
+      if port_is_listening; then
+        echo "== ${portal_service} is active and TCP ${monitor_port} is listening =="
+        return 0
+      fi
+      echo "WARNING: ${portal_service} is active but TCP ${monitor_port} is not listening yet" >&2
+    fi
+    sleep 2
+  done
+  echo "ERROR: ${portal_service} did not become ready" >&2
+  sudo systemctl --no-pager --full status "$portal_service" >&2 || true
+  sudo journalctl -u "$portal_service" -n 80 --no-pager >&2 || true
+  return 68
+}
+
+cleanup() {
+  local rc=$?
+  local portal_rc=0
+  trap - EXIT INT TERM
+  set +e
+  sudo umount "$mountpoint_dir" >/dev/null 2>&1 || true
+  rmdir "$mountpoint_dir" >/dev/null 2>&1 || true
+  rm -f "$remote_uf2"
+  restart_portal
+  portal_rc=$?
+  if [[ "$rc" -eq 0 && "$portal_rc" -ne 0 ]]; then
+    rc=$portal_rc
+  fi
+  exit "$rc"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+volume_path="/dev/disk/by-label/${volume_label}"
+if [[ ! -e "$volume_path" ]]; then
+  echo "ERROR: ${volume_label} is not present at ${volume_path}" >&2
+  exit 66
+fi
+
+echo "== stopping ${portal_service} temporarily =="
+sudo systemctl stop "$portal_service"
+sudo mount "$volume_path" "$mountpoint_dir"
+echo "== writing app-only UF2 to ${volume_label} =="
+sudo cp "$remote_uf2" "$mountpoint_dir/FIRMWARE.UF2"
+sync
+sudo umount "$mountpoint_dir"
+
+deadline="$(python3 -c 'import sys,time; print(time.monotonic()+float(sys.argv[1]))' "$verify_timeout")"
+while [[ ! -e "$volume_path" ]]; do
+  now="$(python3 -c 'import time; print(time.monotonic())')"
+  if python3 -c 'import sys; sys.exit(0 if float(sys.argv[1]) >= float(sys.argv[2]) else 1)' "$now" "$deadline"; then
+    echo "ERROR: ${volume_label} did not reappear for CURRENT.UF2 verification" >&2
+    exit 67
+  fi
+  sleep "$verify_interval"
+done
+
+sudo mount -o ro "$volume_path" "$mountpoint_dir"
+current="$mountpoint_dir/CURRENT.UF2"
+[[ -f "$current" ]] || { echo "ERROR: ${current} is missing" >&2; exit 67; }
+
+echo "== verifying requested UF2 blocks against CURRENT.UF2 =="
+python3 - "$remote_uf2" "$current" <<'PY'
+import struct
+import sys
+
+
+def read_uf2(path):
+    blocks = {}
+    with open(path, "rb") as f:
+        while True:
+            block = f.read(512)
+            if not block:
+                break
+            if len(block) != 512:
+                raise SystemExit(f"{path}: short UF2 block")
+            magic0, magic1, flags, address, size, block_no, count, family = struct.unpack(
+                "<IIIIIIII", block[:32]
+            )
+            end_magic = struct.unpack("<I", block[508:512])[0]
+            if magic0 != 0x0A324655 or magic1 != 0x9E5D5157 or end_magic != 0x0AB16F30:
+                raise SystemExit(f"{path}: invalid UF2 magic")
+            payload = block[32 : 32 + size]
+            if address in blocks:
+                raise SystemExit(f"{path}: duplicate target address 0x{address:x}")
+            blocks[address] = payload
+    return blocks
+
+
+requested = read_uf2(sys.argv[1])
+current = read_uf2(sys.argv[2])
+missing = []
+mismatch = []
+for address, payload in requested.items():
+    got = current.get(address)
+    if got is None:
+        missing.append(address)
+    elif got[: len(payload)] != payload:
+        mismatch.append(address)
+
+print(
+    f"UF2 verify: requested_blocks={len(requested)} "
+    f"missing={len(missing)} mismatch={len(mismatch)}"
+)
+if missing:
+    print(f"first_missing=0x{missing[0]:x}")
+if mismatch:
+    print(f"first_mismatch=0x{mismatch[0]:x}")
+if missing or mismatch:
+    raise SystemExit(1)
+PY
+REMOTE
+remote_rc=$?
+set -e
+
+if [[ "$remote_rc" -ne 0 ]]; then
+  echo "error: app-only UF2 write or verification failed" >&2
+  exit "$remote_rc"
+fi
+
+cat <<EOF2
+== app-only UF2 write verified ==
+Run tools/espwb-status next.
+Remember: serial reachable means only that the RFC2217 portal socket is open.
+For MagTag, 239a:00e5 is TinyUF2 and 239a:80e5 is the application identity.
+If a verified app-only write still will not boot, use ESP ROM bootloader/direct USB
+for full recovery. Do not use TinyUF2 to rewrite bootloader-region images.
+EOF2
