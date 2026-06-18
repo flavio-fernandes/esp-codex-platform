@@ -8,15 +8,21 @@ cd "$REPO_ROOT"
 # shellcheck source=tools/lib/workbench-env
 source "tools/lib/workbench-env"
 load_workbench_env \
-  ESPWB_SLOT WORKBENCH_IP WORKBENCH_URL ESPWB_MONITOR_PORT \
+  ESPWB_SLOT WORKBENCH_IP WORKBENCH_URL ESP_PORT ESPWB_MONITOR_PORT \
   ESPWB_API_CONNECT_TIMEOUT ESPWB_API_MAX_TIME
 
 slot="${ESPWB_SLOT:-SLOT1}"
 workbench_ip="${WORKBENCH_IP:-192.0.2.10}"
 workbench_url="${WORKBENCH_URL:-http://${workbench_ip}:8080}"
-monitor_port="${ESPWB_MONITOR_PORT:-4001}"
+esp_port="${ESP_PORT:-rfc2217://${workbench_ip}:4001?ign_set_control}"
+monitor_port="${ESPWB_MONITOR_PORT:-}"
 api_connect_timeout="${ESPWB_API_CONNECT_TIMEOUT:-3}"
 api_max_time="${ESPWB_API_MAX_TIME:-8}"
+
+if [[ -z "$monitor_port" && "$esp_port" =~ :([0-9]+)(\?|$) ]]; then
+  monitor_port="${BASH_REMATCH[1]}"
+fi
+monitor_port="${monitor_port:-4001}"
 
 check_port() {
   local label="$1"

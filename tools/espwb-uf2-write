@@ -95,49 +95,23 @@ fi
 [[ -x "tools/espwb-ssh" ]] || { echo "error: tools/espwb-ssh is missing or not executable" >&2; exit 1; }
 command -v base64 >/dev/null 2>&1 || { echo "error: base64 is required" >&2; exit 1; }
 command -v python3 >/dev/null 2>&1 || { echo "error: python3 is required" >&2; exit 1; }
+[[ -f "tools/lib/uf2-blocks.py" ]] || { echo "error: tools/lib/uf2-blocks.py is missing" >&2; exit 1; }
 
-python3 - "$uf2" "$min_address" <<'PY'
-import struct
-import sys
-from pathlib import Path
+python3 tools/lib/uf2-blocks.py preflight "$uf2" "$min_address"
 
-path = Path(sys.argv[1])
-minimum = int(sys.argv[2], 0) if sys.argv[2] else None
-raw = path.read_bytes()
-if not raw or len(raw) % 512:
-    raise SystemExit(f"{path}: UF2 size must be a non-zero multiple of 512 bytes")
-
-addresses = []
-for offset in range(0, len(raw), 512):
-    block = raw[offset : offset + 512]
-    magic0, magic1, flags, address, size, block_no, block_count, family = struct.unpack(
-        "<IIIIIIII", block[:32]
-    )
-    end_magic = struct.unpack("<I", block[508:512])[0]
-    if magic0 != 0x0A324655 or magic1 != 0x9E5D5157 or end_magic != 0x0AB16F30:
-        raise SystemExit(f"{path}: invalid UF2 magic in block at file offset {offset}")
-    if size <= 0 or size > 476:
-        raise SystemExit(f"{path}: invalid UF2 payload size {size} at target 0x{address:x}")
-    if minimum is not None and address < minimum:
-        raise SystemExit(
-            f"{path}: target 0x{address:x} is below app-only minimum 0x{minimum:x}"
-        )
-    addresses.append(address)
-
-print(
-    f"UF2 preflight: blocks={len(addresses)} "
-    f"first=0x{min(addresses):x} last=0x{max(addresses):x}"
-)
-PY
-
-remote_uf2="/tmp/espwb-uf2-${slot,,}-$(date +%s)-$$.uf2"
+slot_safe="$(printf '%s' "$slot" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_.-' '-')"
+remote_uf2="/tmp/espwb-uf2-${slot_safe}-$(date +%s)-$$.uf2"
+remote_helper="${remote_uf2%.uf2}-uf2-blocks.py"
 echo "== uploading app-only UF2 to ${slot} workbench =="
+# shellcheck disable=SC2016 # $1 is expanded by the remote sh -c process.
 base64 "$uf2" | tools/espwb-ssh sh -c 'umask 077; base64 -d > "$1"' sh "$remote_uf2"
+# shellcheck disable=SC2016 # $1 is expanded by the remote sh -c process.
+base64 tools/lib/uf2-blocks.py | tools/espwb-ssh sh -c 'umask 077; base64 -d > "$1"' sh "$remote_helper"
 
 set +e
 tools/espwb-ssh bash -s -- \
   "$remote_uf2" "$volume_label" "$slot" "$portal_service" \
-  "$monitor_port" "$verify_timeout" "$verify_interval" <<'REMOTE'
+  "$monitor_port" "$verify_timeout" "$verify_interval" "$remote_helper" <<'REMOTE'
 set -Eeuo pipefail
 
 remote_uf2="$1"
@@ -147,6 +121,7 @@ portal_service="$4"
 monitor_port="$5"
 verify_timeout="$6"
 verify_interval="$7"
+remote_helper="$8"
 mountpoint_dir="$(mktemp -d /tmp/espwb-uf2-mount-XXXXXX)"
 
 port_is_listening() {
@@ -188,7 +163,7 @@ cleanup() {
   set +e
   sudo umount "$mountpoint_dir" >/dev/null 2>&1 || true
   rmdir "$mountpoint_dir" >/dev/null 2>&1 || true
-  rm -f "$remote_uf2"
+  rm -f "$remote_uf2" "$remote_helper"
   restart_portal
   portal_rc=$?
   if [[ "$rc" -eq 0 && "$portal_rc" -ne 0 ]]; then
@@ -229,55 +204,7 @@ current="$mountpoint_dir/CURRENT.UF2"
 [[ -f "$current" ]] || { echo "ERROR: ${current} is missing" >&2; exit 67; }
 
 echo "== verifying requested UF2 blocks against CURRENT.UF2 =="
-python3 - "$remote_uf2" "$current" <<'PY'
-import struct
-import sys
-
-
-def read_uf2(path):
-    blocks = {}
-    with open(path, "rb") as f:
-        while True:
-            block = f.read(512)
-            if not block:
-                break
-            if len(block) != 512:
-                raise SystemExit(f"{path}: short UF2 block")
-            magic0, magic1, flags, address, size, block_no, count, family = struct.unpack(
-                "<IIIIIIII", block[:32]
-            )
-            end_magic = struct.unpack("<I", block[508:512])[0]
-            if magic0 != 0x0A324655 or magic1 != 0x9E5D5157 or end_magic != 0x0AB16F30:
-                raise SystemExit(f"{path}: invalid UF2 magic")
-            payload = block[32 : 32 + size]
-            if address in blocks:
-                raise SystemExit(f"{path}: duplicate target address 0x{address:x}")
-            blocks[address] = payload
-    return blocks
-
-
-requested = read_uf2(sys.argv[1])
-current = read_uf2(sys.argv[2])
-missing = []
-mismatch = []
-for address, payload in requested.items():
-    got = current.get(address)
-    if got is None:
-        missing.append(address)
-    elif got[: len(payload)] != payload:
-        mismatch.append(address)
-
-print(
-    f"UF2 verify: requested_blocks={len(requested)} "
-    f"missing={len(missing)} mismatch={len(mismatch)}"
-)
-if missing:
-    print(f"first_missing=0x{missing[0]:x}")
-if mismatch:
-    print(f"first_mismatch=0x{mismatch[0]:x}")
-if missing or mismatch:
-    raise SystemExit(1)
-PY
+python3 "$remote_helper" verify "$remote_uf2" "$current"
 REMOTE
 remote_rc=$?
 set -e
