@@ -34,12 +34,49 @@ Useful values to set locally:
 - `ESPWB_KNOWN_HOSTS` when the workbench is reachable by SSH but `ssh-keyscan`
   is unreliable during recovery. The helper still uses strict host-key
   checking against the supplied known_hosts file.
+- `ESPWB_SSH_CONNECT_TIMEOUT`, `ESPWB_SSH_SERVER_ALIVE_INTERVAL`, and
+  `ESPWB_SSH_SERVER_ALIVE_COUNT_MAX` when SSH needs longer or shorter failure
+  bounds.
+- `ESPWB_API_CONNECT_TIMEOUT`, `ESPWB_API_MAX_TIME`, and
+  `ESPWB_RECOVER_API_MAX_TIME` when workbench API requests need different
+  bounds.
+- `ESPWB_UF2_VOLUME_LABEL` and `ESPWB_UF2_MIN_ADDRESS` only in a downstream
+  project that actually uses app-only UF2 iteration. The generic starter leaves
+  board-specific values such as `MAGTAGBOOT` and `0x10000` as commented
+  examples.
+- `ESPWB_UF2_VERIFY_TIMEOUT` and `ESPWB_UF2_VERIFY_INTERVAL` to tune how long
+  app-only UF2 verification waits for the bootloader volume to reappear.
+- `ESPWB_LOCAL_PORTAL_SERVICE` when the workbench service has a non-default
+  name and `tools/espwb-uf2-write` needs to stop/restart it remotely.
 - `WORKBENCH_CAMERA_DEVICE` when using `tools/workbench-camera-capture` on a
   host with multiple V4L2 cameras.
 - `ESPWB_MONITOR_IDLE_TIMEOUT`, default `300`, exits a quiet RFC2217 monitor so
   post-monitor recovery still runs. Set to `0` only for an intentional
   unbounded live monitor.
 - `ESPWB_MONITOR_MAX_TIME`, default `0`, optionally caps total monitor runtime.
+- `STATIC_ONLY=1` for validation runs that should check local tooling without
+  requiring a reachable workbench or physical board.
+
+Values for the workbench-installed helper:
+
+The following variables are read by `/usr/local/bin/espwb-local-esptool` on the
+Raspberry Pi workbench, not by the project checkout unless you are running that
+helper directly on the Pi:
+
+- `ESPWB_LOCAL_API_URL`
+- `ESPWB_LOCAL_REENUMERATE_WAIT`
+- `ESPWB_LOCAL_REENUMERATE_INTERVAL`
+- `ESPWB_LOCAL_POST_ESPTOOL_SETTLE`
+- `ESPWB_LOCAL_ESPTOOL_ATTEMPTS`
+- `ESPWB_LOCAL_PORTAL_START_ATTEMPTS`
+- `ESPWB_LOCAL_PORTAL_START_INTERVAL`
+- `ESPWB_LOCAL_PORTAL_PORT`
+- `ESPWB_LOCAL_GPIO_RESET`
+- `ESPWB_LOCAL_GPIO_BOOT`
+- `ESPWB_LOCAL_GPIO_EN`
+
+Keep GPIO reset support opt-in. The generic platform does not assume every
+fixture has BOOT/EN wired, nor that every board uses the same GPIO numbers.
 
 Debug-only toggles:
 

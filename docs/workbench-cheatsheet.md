@@ -24,6 +24,7 @@ A Dev Container is the repo-defined Docker development environment in
 devcontainer up --workspace-folder .
 devcontainer exec --workspace-folder . esphome version
 devcontainer exec --workspace-folder . tools/validate-workbench.sh
+devcontainer exec --workspace-folder . tools/espwb-status
 devcontainer exec --workspace-folder . tools/espwb-esptool flash-id
 ```
 
@@ -96,11 +97,38 @@ you pass it.
 ## Pre-flash identity check
 
 ```bash
+devcontainer exec --workspace-folder . tools/espwb-status
 devcontainer exec --workspace-folder . tools/espwb-esptool flash-id
 ```
 
 Verify the expected slot, chip family, and flash size for the board installed in
-the downstream project immediately before flashing.
+the downstream project immediately before flashing. In the status output,
+`serial: reachable` only means the RFC2217 portal socket accepted a connection;
+it does not prove application liveness.
+
+## Native USB states
+
+Native USB boards can change USB identity as they move between application
+firmware, ESP ROM bootloader, UF2 bootloader, and deep sleep. Start with:
+
+```bash
+devcontainer exec --workspace-folder . tools/espwb-status
+```
+
+| State | What status usually shows | Meaning | Next step |
+| --- | --- | --- | --- |
+| Application running | Application USB identity, portal reachable, and an app-specific probe responds | Firmware is executing | Continue normal testing. |
+| TinyUF2 bootloader | UF2 volume present; for MagTag, `239a:00e5` | Bootloader is running, not the app | Use app-only UF2 if the downstream project supports it. |
+| Deep sleep | USB serial disappears or portal state becomes stale until wake | Firmware intentionally powered down native USB | Wait for wake, use a configured wake source, or reset. |
+| Portal/recovery issue | API reachable but serial refused, `running=false`, or `last_error` set | Workbench ownership and USB state disagree | Run reset-aware recovery, then re-check status. |
+
+MagTag examples are useful concrete identities, not generic assumptions:
+
+```text
+239a:00e5  Adafruit MagTag TinyUF2 bootloader
+239a:80e5  Adafruit MagTag application USB identity
+303a:0002  Espressif ESP32-S2 ROM bootloader
+```
 
 ## Recovery
 
@@ -161,6 +189,68 @@ BOOT/RESET wiring in the workbench fixture.
 
 If the flashed app is bad, rebuild a known-good tiny example and flash its
 fresh factory image.
+
+For native USB boards, use this recovery decision tree:
+
+```text
+Does the application boot?
+|
++-- Yes -- continue normal testing.
+|
++-- No, but a trusted UF2 volume exists
+|   +-- write app-only UF2
+|   +-- verify requested blocks against CURRENT.UF2
+|   +-- reset and verify application identity plus an app-specific probe
+|
++-- No after verified app-only UF2, or no UF2 volume
+    +-- enter the ESP ROM bootloader
+    +-- use direct USB or another known-good ROM-loader transport
+    +-- run the downstream project's documented full flash
+```
+
+App-only UF2 command shape:
+
+```bash
+devcontainer exec --workspace-folder . tools/espwb-uf2-write \
+  --app-only \
+  --label VOLUME \
+  --min-address APP_OFFSET \
+  path/to/app-only.uf2
+```
+
+The UF2 label and application offset are board-specific. For example, a MagTag
+downstream project may use `--label MAGTAGBOOT --min-address 0x10000`, but this
+generic repo does not make those defaults. `tools/espwb-uf2-write --full` is
+always refused; TinyUF2 is not a full bootloader-region recovery path.
+
+For full native USB recovery, connect the board directly to the Linux host or
+another known-good ESP ROM-loader path, enter ROM bootloader mode, and run the
+downstream board's full flash command with explicit offsets. Generic ESP32-S2
+command shape:
+
+```bash
+python -m esptool \
+  --chip esp32s2 \
+  --port /dev/serial/by-id/<rom-loader-device> \
+  --before no-reset \
+  --after hard-reset \
+  write-flash <offset-1> <image-1> <offset-2> <image-2>
+```
+
+Do not copy offsets from another board. More detail is in
+`docs/native-usb-recovery.md`.
+
+After any flash, ask "what state am I in?" before changing firmware again:
+
+```bash
+devcontainer exec --workspace-folder . tools/espwb-status
+devcontainer exec --workspace-folder . tools/espwb-esptool flash-id
+```
+
+Then run a downstream application-specific probe. If the board remains in UF2
+after a verified app-only write, switch to ROM-loader full recovery. If the app
+is intentionally asleep, validate wake/reset behavior separately from portal
+failure.
 
 ## Serial monitor
 
