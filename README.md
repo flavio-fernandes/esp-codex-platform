@@ -18,8 +18,6 @@ Mac/workstation -> VS Code SSH -> Linux host -> Docker/devcontainer -> ESP workb
 - USB-aware workbench status through `tools/espwb-status`.
 - Reset-aware `chip-id`, `flash-id`, `read-flash`, and `write-flash` through
   `tools/espwb-esptool`.
-- Verified app-only UF2 writes through `tools/espwb-uf2-write` for boards that
-  intentionally expose a trusted UF2 bootloader volume.
 - RFC2217 serial monitoring through `tools/espwb-monitor`.
 - Workbench validation through `tools/validate-workbench.sh`.
 - Safe defaults for `SLOT1`, ignored local config, ignored secrets, ignored
@@ -165,8 +163,7 @@ The status helper checks host, SSH, API, and serial-socket reachability, then
 prints the selected slot state and USB identities reported by the workbench API.
 Treat `serial: reachable` as a portal-socket check only; it does not prove that
 the application firmware is awake or responding. Native USB boards can expose
-different identities for application firmware, ROM bootloader, deep sleep, and
-UF2 bootloader modes.
+different identities for application firmware, ROM bootloader, and deep sleep.
 
 `tools/espwb-esptool` SSHs to the workbench and calls the reset-aware helper
 there. Use it for esptool operations and flashing:
@@ -212,34 +209,11 @@ ESP32-S3 USB-Serial/JTAG boards this often means the board was left in
 `DOWNLOAD(USB/UART0)` and needs a plain reset with BOOT released.
 
 If `flash-id` fails with a pySerial write timeout and the workbench API reports
-the board in application or UF2 USB identity instead of Espressif ROM/download
-mode, the board has not entered the ROM bootloader. For boards like the
+the board in application USB identity instead of Espressif ROM/download mode,
+the board has not entered the ROM bootloader. For boards like the
 UnexpectedMaker FeatherS3, the manual recovery sequence is BOOT held while
 RESET is pressed and released; unattended recovery needs equivalent BOOT/RESET
 wiring in the workbench fixture.
-
-For native USB boards with a trusted TinyUF2-style volume, this repo also
-provides an app-only transport:
-
-```bash
-devcontainer exec --workspace-folder . tools/espwb-uf2-write \
-  --app-only \
-  --label VOLUME \
-  --min-address APP_OFFSET \
-  path/to/app-only.uf2
-```
-
-Downstream projects own the UF2 generation, volume label, and application
-offset. Do not make board-specific values such as `MAGTAGBOOT` or `0x10000`
-generic defaults. The helper refuses `--full`, mounts only
-`/dev/disk/by-label/<label>`, verifies requested UF2 blocks against
-`CURRENT.UF2`, and restarts the RFC2217 portal on every exit path.
-
-TinyUF2 is for app-only iteration, not full recovery. If a verified app-only
-UF2 write still does not boot, use direct USB or another known-good ESP ROM
-loader path to perform the downstream board's documented full flash. See
-`docs/native-usb-recovery.md` for the runtime-state table and recovery decision
-tree.
 
 `tools/espwb-monitor` opens raw DUT serial logs through RFC2217:
 
@@ -297,19 +271,17 @@ different local camera is attached.
 - `examples/feathers3-rgb-blink/` - board-specific FeatherS3 RGB blink smoke
   test.
 - `examples/generic-heartbeat/` - tiny heartbeat/logging smoke test.
+- `examples/magtag-lvgl-shapes/` - MagTag e-paper LVGL canvas example.
 - `tools/espwb-ssh` - project-local SSH wrapper.
 - `tools/espwb-status` - USB-aware workbench and slot status helper.
 - `tools/espwb-esptool` - reset-aware esptool/flashing wrapper.
-- `tools/espwb-uf2-write` - verified app-only UF2 workbench transport.
 - `tools/espwb-monitor` - RFC2217 serial monitor wrapper.
 - `tools/workbench-local-esptool` - reference helper installed on the workbench
   as `/usr/local/bin/espwb-local-esptool`.
-- `tools/lib/uf2-blocks.py` - shared UF2 validation and verification logic.
 - `tools/workbench-camera-capture` - optional local V4L2 camera snapshot.
 - `tools/workbench-camera-sequence` - optional timed camera snapshots.
 - `tools/validate-workbench.sh` - local toolchain and workbench validation.
-- `docs/native-usb-recovery.md` - native USB, TinyUF2, and direct recovery
-  guide.
+- `docs/native-usb-recovery.md` - native USB and direct recovery guide.
 - `docs/workbench-cheatsheet.md` - command reference.
 - `docs/public-release-checklist.md` - public hygiene checks.
 

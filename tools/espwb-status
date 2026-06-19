@@ -89,10 +89,14 @@ for item in data.get("slots", []):
         )
     )
 
+    slot_present = bool(item.get("present"))
     usb_devices = item.get("usb_devices") or []
     if not usb_devices:
         print("slot.usb: none")
         break
+
+    if not slot_present:
+        print("slot.usb.note: USB identity below may be stale because slot present=false")
 
     for usb in usb_devices:
         product = usb.get("product") or "unknown product"
@@ -101,8 +105,8 @@ for item in data.get("slots", []):
 
         identity = vid_pid.lower()
         if identity == "239a:00e5":
-            print("slot.usb.mode: Adafruit MagTag TinyUF2 bootloader")
-            print("slot.note: application serial commands cannot respond in TinyUF2")
+            print("slot.usb.mode: Adafruit MagTag bootloader")
+            print("slot.note: application serial commands cannot respond in bootloader mode")
         elif identity == "239a:80e5":
             print("slot.usb.mode: Adafruit MagTag application USB identity")
         elif identity == "303a:0002":

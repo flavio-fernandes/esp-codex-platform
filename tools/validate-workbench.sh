@@ -71,9 +71,7 @@ check_executable tools/espwb-esptool
 check_executable tools/espwb-monitor
 check_executable tools/espwb-ssh
 check_executable tools/espwb-status
-check_executable tools/espwb-uf2-write
 check_executable tools/workbench-local-esptool
-check_executable tools/lib/uf2-blocks.py
 
 if [[ "$STATIC_ONLY" == "1" ]]; then
   printf '[SKIP] Workbench network and board checks skipped because STATIC_ONLY=1.\n'

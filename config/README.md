@@ -40,14 +40,8 @@ Useful values to set locally:
 - `ESPWB_API_CONNECT_TIMEOUT`, `ESPWB_API_MAX_TIME`, and
   `ESPWB_RECOVER_API_MAX_TIME` when workbench API requests need different
   bounds.
-- `ESPWB_UF2_VOLUME_LABEL` and `ESPWB_UF2_MIN_ADDRESS` only in a downstream
-  project that actually uses app-only UF2 iteration. The generic starter leaves
-  board-specific values such as `MAGTAGBOOT` and `0x10000` as commented
-  examples.
-- `ESPWB_UF2_VERIFY_TIMEOUT` and `ESPWB_UF2_VERIFY_INTERVAL` to tune how long
-  app-only UF2 verification waits for the bootloader volume to reappear.
 - `ESPWB_LOCAL_PORTAL_SERVICE` when the workbench service has a non-default
-  name and `tools/espwb-uf2-write` needs to stop/restart it remotely.
+  name.
 - `WORKBENCH_CAMERA_DEVICE` when using `tools/workbench-camera-capture` on a
   host with multiple V4L2 cameras.
 - `ESPWB_MONITOR_IDLE_TIMEOUT`, default `300`, exits a quiet RFC2217 monitor so

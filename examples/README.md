@@ -8,8 +8,6 @@ flashing path.
 - `feathers3-rgb-blink/` drives the Unexpected Maker FeatherS3 RGB LED
   through its LDO2 power pin.
 - `magtag-basic-blink/` toggles the Adafruit MagTag red D13 LED on GPIO13.
-- `magtag-epaper-smoke/` keeps that MagTag LED heartbeat and adds one
-  e-paper-only geometry refresh, without LVGL.
 - `magtag-lvgl-shapes/` targets the Adafruit MagTag 2.9 ESP32-S2 e-paper
   display with a small LVGL canvas.
 - `esp32-devkit-gpio2-blink/` targets common CP2102 ESP32 DevKit-style boards

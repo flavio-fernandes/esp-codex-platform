@@ -9,8 +9,7 @@ verified, and displayed the camera-visible geometry pattern.
 - Do not push to GitHub without explicit approval.
 - Do not flash slots other than `SLOT1`.
 - Do not use RFC2217 reset control for flashing.
-- `workbench.env` at the repo root is untracked local config and should be left
-  alone unless the user asks.
+- `config/workbench.env` is the canonical ignored local config file.
 
 ## Current Objective
 
@@ -163,13 +162,8 @@ Plain application `firmware.bin` alone is not enough after an erase.
 
 ## Next E-Paper Smoke Step
 
-The e-paper-only smoke example is:
-
-- `examples/magtag-epaper-smoke/magtag-epaper-smoke.yaml`
-- `examples/magtag-epaper-smoke/.gitignore`
-
-It intentionally keeps the proven GPIO13 blink heartbeat and adds only the
-MagTag e-paper wiring:
+The temporary e-paper-only smoke example intentionally kept the proven GPIO13
+blink heartbeat and added only the MagTag e-paper wiring:
 
 ```yaml
 spi:
@@ -201,6 +195,8 @@ Observed result:
 
 - The image flashed and verified as a complete `firmware.factory.bin` at `0x0`.
 - The camera captured the panel with the simple geometry pattern visible.
+- After that proof, the temporary e-paper-only example was removed so the repo
+  keeps the LVGL example as the single MagTag display target.
 
 ## Next LVGL Step
 
