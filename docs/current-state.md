@@ -1,7 +1,7 @@
 # Current State
 
-Last updated: 2026-06-19, after adding the MagTag e-paper-only smoke step on
-top of the proven GPIO13 blink baseline.
+Last updated: 2026-06-19, after the MagTag e-paper-only smoke image flashed,
+verified, and displayed the camera-visible geometry pattern.
 
 ## Repository
 
@@ -18,17 +18,23 @@ Prove the MagTag direct-USB firmware path one layer at a time, keeping each step
 observable on the physical board before adding the next subsystem.
 
 Current status: the minimal GPIO13 blink application boots after a direct USB
-factory-image flash, BOOT0 release, and physical reset. The user observed the
-red D13 LED blinking. The board is battery-backed, so unplugging USB is not a
-true power cycle for this test setup.
+factory-image flash, BOOT0 release, and physical reset, and the e-paper-only
+smoke image produced a camera-visible geometry pattern. The board is
+battery-backed, so unplugging USB is not a true power cycle for this test setup.
+
+Now proven:
+
+- direct USB factory-image flash at `0x0`
+- GPIO13 red D13 blink heartbeat
+- e-paper without LVGL, using the MagTag SPI/display pins
+- camera-visible display refresh
 
 Not yet proven:
 
-- USB logging on the minimal app
-- e-paper without LVGL
+- USB CDC logging in the running app
 - LVGL canvas drawing
 
-## Proven Blink Baseline
+## Proven Blink And E-Paper Baselines
 
 Files:
 
@@ -140,7 +146,7 @@ Verification successful (digest matched).
 After BOOT0 was released and RESET was pressed once, the user observed the
 physical red D13 LED blinking.
 
-No camera proof was used for the blink baseline. No ROM UART boot log was
+No camera proof was used for the blink-only baseline. No ROM UART boot log was
 captured because the physical blink passed.
 
 ## Direct USB Flash Rule
@@ -157,7 +163,7 @@ Plain application `firmware.bin` alone is not enough after an erase.
 
 ## Next E-Paper Smoke Step
 
-The next tracked example is:
+The e-paper-only smoke example is:
 
 - `examples/magtag-epaper-smoke/magtag-epaper-smoke.yaml`
 - `examples/magtag-epaper-smoke/.gitignore`
@@ -183,24 +189,41 @@ display:
 
 The display lambda clears the panel and draws a border, bar, circle, triangle,
 and rectangle. It has no Wi-Fi, API, OTA, LVGL, custom PlatformIO options, or
-custom partition table.
+custom partition table. It now also has an explicit USB CDC logger setting for
+the next flash:
 
-Pass criteria:
+```yaml
+logger:
+  hardware_uart: USB_CDC
+```
 
-- The red D13 LED still blinks after BOOT0 is released and RESET is pressed.
-- The e-paper panel visibly refreshes once to the simple geometry pattern.
+Observed result:
 
-If this passes, move the same pins and model forward into the LVGL example.
+- The image flashed and verified as a complete `firmware.factory.bin` at `0x0`.
+- The camera captured the panel with the simple geometry pattern visible.
+
+## Next LVGL Step
+
+The LVGL example now carries forward only the proven pieces:
+
+- `adafruit_magtag29_esp32s2`
+- explicit `logger: hardware_uart: USB_CDC`
+- GPIO13 blink heartbeat
+- SPI pins `GPIO36`/`GPIO35`
+- e-paper pins `GPIO8`/`GPIO7`/`GPIO5`/`GPIO6`
+- `gdew029t5`
+- default generated partition table and `firmware.factory.bin` flashing at
+  `0x0`
+
+It deliberately does not use custom PlatformIO partition options.
 
 Still deferred:
 
-- Add USB logging only if the physical result is ambiguous.
-- Add LVGL after the e-paper-only path is proven.
 - Reintroduce remote monitoring only after direct USB is boringly reliable.
 
-## Deferred LVGL Example
+## Target LVGL Example
 
-The target LVGL example remains:
+The target LVGL example is:
 
 - `examples/magtag-lvgl-shapes/magtag-lvgl-shapes.yaml`
 

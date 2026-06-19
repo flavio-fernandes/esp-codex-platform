@@ -1,0 +1,100 @@
+substitutions:
+  name: magtag-lvgl-shapes
+  friendly_name: MagTag LVGL Shapes
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+
+esp32:
+  board: adafruit_magtag29_esp32s2
+  framework:
+    type: arduino
+
+logger:
+  hardware_uart: USB_CDC
+
+output:
+  - platform: gpio
+    id: red_led
+    pin: GPIO13
+
+interval:
+  - interval: 1s
+    then:
+      - output.turn_on: red_led
+      - delay: 500ms
+      - output.turn_off: red_led
+
+spi:
+  clk_pin: GPIO36
+  mosi_pin: GPIO35
+
+display:
+  - platform: waveshare_epaper
+    id: magtag_epaper
+    cs_pin: GPIO8
+    dc_pin: GPIO7
+    busy_pin: GPIO5
+    reset_pin: GPIO6
+    model: gdew029t5
+    update_interval: 10s
+
+lvgl:
+  displays:
+    - magtag_epaper
+  rotation: 270
+  full_refresh: true
+  update_when_display_idle: true
+  buffer_size: 25%
+  pages:
+    - id: shapes_page
+      bg_color: white
+      widgets:
+        - canvas:
+            id: shapes_canvas
+            width: 296
+            height: 128
+            align: center
+            on_boot:
+              then:
+                - lvgl.canvas.fill:
+                    id: shapes_canvas
+                    color: white
+                - lvgl.canvas.draw_text:
+                    id: shapes_canvas
+                    x: 12
+                    y: 10
+                    max_width: 272
+                    text: "MagTag LVGL"
+                    color: black
+                - lvgl.canvas.draw_arc:
+                    id: shapes_canvas
+                    x: 64
+                    y: 78
+                    radius: 26
+                    start_angle: 0deg
+                    end_angle: 360deg
+                    width: 4
+                    color: black
+                - lvgl.canvas.draw_polygon:
+                    id: shapes_canvas
+                    points:
+                      - x: 178
+                        y: 48
+                      - x: 138
+                        y: 106
+                      - x: 218
+                        y: 106
+                    border_width: 4
+                    border_color: black
+                - lvgl.canvas.draw_rectangle:
+                    id: shapes_canvas
+                    x: 236
+                    y: 58
+                    width: 42
+                    height: 38
+                    radius: 0
+                    bg_color: white
+                    border_width: 4
+                    border_color: black

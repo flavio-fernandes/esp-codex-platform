@@ -15,6 +15,9 @@ esp32:
   framework:
     type: arduino
 
+logger:
+  hardware_uart: USB_CDC
+
 output:
   - platform: gpio
     id: red_led
