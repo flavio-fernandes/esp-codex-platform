@@ -38,7 +38,13 @@ interval:
       - output.turn_off: red_led
   - interval: 10s
     then:
-      - lambda: ESP_LOGD("main", "ping output; epaper_refresh_count=%d", id(magtag_epaper_refresh_count));
+      - lambda: |-
+          ESP_LOGD(
+            "main",
+            "ping output; epaper_refreshed=%s epaper_refresh_count=%d",
+            id(magtag_epaper_refreshed) ? "true" : "false",
+            id(magtag_epaper_refresh_count)
+          );
 
 spi:
   clk_pin: GPIO36
@@ -61,7 +67,16 @@ lvgl:
     - magtag_epaper
   full_refresh: true
   update_when_display_idle: false
+  on_draw_start:
+    - lambda: ESP_LOGD("main", "LVGL draw start");
   on_draw_end:
+    - lambda: |-
+        ESP_LOGD(
+          "main",
+          "LVGL draw end; epaper_refreshed=%s epaper_refresh_count=%d",
+          id(magtag_epaper_refreshed) ? "true" : "false",
+          id(magtag_epaper_refresh_count)
+        );
     - if:
         condition:
           lambda: return !id(magtag_epaper_refreshed);
@@ -87,8 +102,30 @@ lvgl:
         bg_opa: 0%
         border_width: 6
         border_color: white
+    - obj:
+        x: 34
+        y: 92
+        width: 60
+        height: 60
+        radius: 30
+        bg_opa: 0%
+        border_width: 6
+        border_color: white
+    - line:
+        points:
+          - x: 64
+            y: 170
+          - x: 36
+            y: 226
+          - x: 92
+            y: 226
+          - x: 64
+            y: 170
+        line_width: 6
+        line_color: white
+        line_rounded: true
     - label:
-        x: 28
+        x: 20
         y: 262
-        text: "RECT"
+        text: "ALL SHAPES"
         text_color: white

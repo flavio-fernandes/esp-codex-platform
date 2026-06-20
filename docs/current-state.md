@@ -1,8 +1,8 @@
 # Current State
 
 Last updated: 2026-06-20, after the MagTag LVGL image flashed over local USB,
-booted, produced USB CDC heartbeat logs, and rendered a camera-visible black
-LVGL rectangle on the e-paper panel.
+booted, produced USB CDC heartbeat logs, and rendered camera-visible LVGL text,
+rectangle, circle, and triangle content on the e-paper panel.
 
 ## Repository
 
@@ -20,9 +20,9 @@ observable on the physical board before adding the next subsystem.
 Current status: the minimal GPIO13 blink application boots after a direct USB
 factory-image flash, BOOT0 release, and physical reset; the e-paper-only smoke
 image produced a camera-visible geometry pattern; and the LVGL image now boots,
-prints a 10-second USB CDC heartbeat, and renders visible black content on the
-panel. The board is battery-backed, so unplugging USB is not a true power cycle
-for this test setup.
+prints a 10-second USB CDC heartbeat, and renders the intended text, rectangle,
+circle, and triangle composition on the panel. The board is battery-backed, so
+unplugging USB is not a true power cycle for this test setup.
 
 Now proven:
 
@@ -32,10 +32,7 @@ Now proven:
 - camera-visible display refresh
 - USB CDC logging in the running app
 - LVGL drawing visible content on e-paper
-
-Not yet proven:
-
-- final intended circle/triangle/rectangle composition
+- final intended text/rectangle/circle/triangle composition
 
 ## Proven Blink And E-Paper Baselines
 
@@ -281,6 +278,8 @@ The LVGL example now carries forward only the proven pieces:
   e-paper once after the first completed draw
 - a refresh counter in the heartbeat log so repeated physical update requests
   are visible as `epaper_refresh_count=<n>`
+- unconditional LVGL draw-start/draw-end logs while finishing the example, so
+  render callbacks can be distinguished from physical panel reset/power motion
 
 It deliberately does not use custom PlatformIO partition options.
 
@@ -306,11 +305,17 @@ Observed LVGL debugging results:
 - A refresh count of `1` with continued visible flashing points at the e-paper
   waveform/full-refresh behavior rather than repeated LVGL update requests.
   Avoid `full_update_every: 1` after the baseline is proven.
+- Visible panel motion at boot can come from the Waveshare reset/power sequence
+  and does not necessarily mean `component.update: magtag_epaper` ran.
+- The final native-orientation widget composition rendered camera-visible text,
+  rectangle, circle, and real triangle line content while the heartbeat stayed
+  at `epaper_refreshed=true epaper_refresh_count=1`.
 
 Still deferred:
 
 - Reintroduce remote monitoring only after direct USB is boringly reliable.
-- Reintroduce rotation and final shapes one feature at a time.
+- Reintroduce rotation only if the example must match the MagTag landscape
+  orientation; native orientation is now proven.
 
 ## Target LVGL Example
 
@@ -322,7 +327,7 @@ The intended final example draws:
 
 - `MagTag LVGL` text
 - a circle
-- a rotated square/diamond while the triangle path is isolated
+- a real triangle drawn with the LVGL `line` widget
 - a rectangle
 
 **This repo intentionally uses a much simpler MagTag partitioning approach than
