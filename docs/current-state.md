@@ -1,8 +1,8 @@
 # Current State
 
 Last updated: 2026-06-20, after the MagTag LVGL image flashed over local USB,
-booted, and produced USB CDC heartbeat logs, but still rendered a blank e-paper
-panel.
+booted, produced USB CDC heartbeat logs, and rendered a camera-visible black
+LVGL rectangle on the e-paper panel.
 
 ## Repository
 
@@ -19,11 +19,10 @@ observable on the physical board before adding the next subsystem.
 
 Current status: the minimal GPIO13 blink application boots after a direct USB
 factory-image flash, BOOT0 release, and physical reset; the e-paper-only smoke
-image produced a camera-visible geometry pattern; and the LVGL image boots far
-enough to print a 10-second USB CDC heartbeat. The LVGL panel output is still
-blank, so the remaining problem is LVGL rendering/refresh behavior rather than
-flashing, boot, USB logging, SPI wiring, or basic e-paper refresh. The board is
-battery-backed, so unplugging USB is not a true power cycle for this test setup.
+image produced a camera-visible geometry pattern; and the LVGL image now boots,
+prints a 10-second USB CDC heartbeat, and renders visible black content on the
+panel. The board is battery-backed, so unplugging USB is not a true power cycle
+for this test setup.
 
 Now proven:
 
@@ -32,10 +31,11 @@ Now proven:
 - e-paper without LVGL, using the MagTag SPI/display pins
 - camera-visible display refresh
 - USB CDC logging in the running app
+- LVGL drawing visible content on e-paper
 
 Not yet proven:
 
-- LVGL drawing visible content on e-paper
+- final intended circle/triangle/rectangle composition
 
 ## Proven Blink And E-Paper Baselines
 
@@ -178,22 +178,34 @@ find /dev -maxdepth 1 \( -name 'ttyACM*' -o -name 'ttyUSB*' \) -print
 ```
 
 ```bash
-# Flash the combined factory image. Use the discovered port, often /dev/ttyACM0
-# or /dev/serial/by-id/usb-Espressif_ESP32-S2_...-if00.
+# Set this to the port discovered above. Prefer /dev/serial/by-id when present;
+# otherwise use the active /dev/ttyACM* or /dev/ttyUSB* node. Do not assume
+# /dev/ttyACM0; the MagTag has appeared as /dev/ttyACM1 during this bring-up.
+MAGTAG_PORT=/dev/serial/by-id/usb-Espressif_ESP32-S2_7c:df:a1:01:25:f2-if00
+```
+
+```bash
+# Flash the combined factory image using the discovered port.
 .venv-esptool/bin/python -m esptool \
   --chip esp32s2 \
-  --port /dev/ttyACM0 \
+  --port "$MAGTAG_PORT" \
   write-flash 0x0 \
   examples/magtag-lvgl-shapes/.esphome/build/magtag-lvgl-shapes/.pioenvs/magtag-lvgl-shapes/firmware.factory.bin
 ```
 
 ```bash
 # Read a short USB CDC log sample from the running app.
-.venv-esptool/bin/python -c "import serial,time,sys; p='/dev/ttyACM0'; s=serial.Serial(p,115200,timeout=0.2); end=time.time()+14; data=bytearray();
+.venv-esptool/bin/python -c "import os,serial,time,sys; p=os.environ.get('MAGTAG_PORT','/dev/ttyACM1'); s=serial.Serial(p,115200,timeout=0.2); end=time.time()+14; data=bytearray();
 while time.time()<end:
     data.extend(s.read(4096))
 s.close(); sys.stdout.buffer.write(data)"
 ```
+
+Proven serial path rule: use `/dev/serial/by-id/...` when it exists, but do not
+block on it. During the MagTag bring-up, the stable by-id path disappeared after
+some reset states while the running app was still readable as `/dev/ttyACM1`.
+In that case, list local serial nodes and read the active `/dev/ttyACM*` device
+directly with the pyserial command above.
 
 Expected healthy-app serial evidence:
 
@@ -245,7 +257,7 @@ Observed result:
 - After that proof, the temporary e-paper-only example was removed so the repo
   keeps the LVGL example as the single MagTag display target.
 
-## Next LVGL Step
+## Proven LVGL Step
 
 The LVGL example now carries forward only the proven pieces:
 
@@ -258,16 +270,29 @@ The LVGL example now carries forward only the proven pieces:
 - default generated partition table and `firmware.factory.bin` flashing at
   `0x0`
 - USB CDC logger with a 10-second `ping output` heartbeat
-- 10-second e-paper display refresh so LVGL has repeated opportunities to
-  flush before the panel update
+- `auto_clear_enabled: false` on the Waveshare display
+- `update_interval: never` on the Waveshare display
+- `full_update_every: 1` while proving the baseline
+- LVGL `buffer_size: 100%`
+- LVGL `update_when_display_idle: false`
+- LVGL `on_draw_end: component.update: magtag_epaper`
 
 It deliberately does not use custom PlatformIO partition options.
+
+Observed LVGL debugging results:
+
+- `buffer_size: 25%` panic-looped during LVGL setup after the resolution log.
+- Removing `rotation: 270` did not fix that panic.
+- `buffer_size: 100%` allowed setup to continue.
+- `update_when_display_idle: true` left old e-paper content visible and did not
+  trigger the desired physical refresh.
+- Explicit `on_draw_end` update rendered the large black LVGL rectangle and
+  cleared the old retained panel content.
 
 Still deferred:
 
 - Reintroduce remote monitoring only after direct USB is boringly reliable.
-- If the widget version remains blank, remove LVGL software rotation next and
-  test an unrotated minimal label.
+- Reintroduce rotation and final shapes one feature at a time.
 
 ## Target LVGL Example
 

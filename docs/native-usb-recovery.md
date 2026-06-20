@@ -98,6 +98,14 @@ find /dev/serial/by-id -maxdepth 1 -type l -print
 find /dev -maxdepth 1 \( -name 'ttyACM*' -o -name 'ttyUSB*' \) -print
 ```
 
+Set the port to the path discovered above. Prefer the by-id path when present;
+otherwise use the active `/dev/ttyACM*` or `/dev/ttyUSB*` node. Do not assume a
+fixed ACM number.
+
+```bash
+MAGTAG_PORT=/dev/serial/by-id/usb-Espressif_ESP32-S2_7c:df:a1:01:25:f2-if00
+```
+
 Flash the combined factory image at `0x0`. This is the preferred recovery and
 bring-up command because it keeps bootloader, partition table, and application
 image together:
@@ -105,7 +113,7 @@ image together:
 ```bash
 .venv-esptool/bin/python -m esptool \
   --chip esp32s2 \
-  --port /dev/ttyACM0 \
+  --port "$MAGTAG_PORT" \
   write-flash 0x0 \
   examples/magtag-lvgl-shapes/.esphome/build/magtag-lvgl-shapes/.pioenvs/magtag-lvgl-shapes/firmware.factory.bin
 ```
@@ -116,11 +124,22 @@ verify `239a:80e5`.
 For USB CDC logger proof, read a short sample from the running app:
 
 ```bash
-.venv-esptool/bin/python -c "import serial,time,sys; p='/dev/ttyACM0'; s=serial.Serial(p,115200,timeout=0.2); end=time.time()+14; data=bytearray();
+.venv-esptool/bin/python -c "import os,serial,time,sys; p=os.environ.get('MAGTAG_PORT','/dev/ttyACM1'); s=serial.Serial(p,115200,timeout=0.2); end=time.time()+14; data=bytearray();
 while time.time()<end:
     data.extend(s.read(4096))
 s.close(); sys.stdout.buffer.write(data)"
 ```
+
+Use `/dev/serial/by-id/...` when the kernel exposes it. If that directory is
+missing or empty after a reset, use the direct `/dev/ttyACM*` or `/dev/ttyUSB*`
+node found by the command above. The MagTag app was successfully sampled on
+`/dev/ttyACM1` after a flash/reset cycle even though `/dev/serial/by-id` was not
+available in that moment.
+
+Known-good LVGL/e-paper lifecycle for this example: disable display auto-clear,
+leave the Waveshare display polling interval at `never`, use a full LVGL buffer,
+disable `update_when_display_idle`, and trigger `component.update:
+magtag_epaper` from LVGL `on_draw_end`.
 
 ## Post-flash State Check
 

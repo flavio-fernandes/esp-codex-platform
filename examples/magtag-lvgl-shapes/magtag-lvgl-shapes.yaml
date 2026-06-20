@@ -13,6 +13,7 @@ esp32:
 
 logger:
   hardware_uart: USB_CDC
+  level: DEBUG
 
 output:
   - platform: gpio
@@ -41,48 +42,30 @@ display:
     busy_pin: GPIO5
     reset_pin: GPIO6
     model: gdew029t5
-    update_interval: 10s
+    auto_clear_enabled: false
+    update_interval: never
+    full_update_every: 1
 
 lvgl:
   displays:
     - magtag_epaper
-  rotation: 270
   full_refresh: true
-  update_when_display_idle: true
+  update_when_display_idle: false
+  on_draw_end:
+    - component.update: magtag_epaper
   buffer_size: 100%
-  pages:
-    - id: shapes_page
-      bg_color: white
-      widgets:
-        - label:
-            text: "MagTag LVGL"
-            x: 12
-            y: 10
-            text_color: black
-        - obj:
-            x: 38
-            y: 52
-            width: 54
-            height: 54
-            radius: 27
-            bg_opa: 0%
-            border_width: 4
-            border_color: black
-        - obj:
-            x: 138
-            y: 58
-            width: 74
-            height: 48
-            bg_opa: 0%
-            border_width: 4
-            border_color: black
-            transform_angle: 45deg
-        - obj:
-            x: 236
-            y: 58
-            width: 42
-            height: 38
-            radius: 0
-            bg_opa: 0%
-            border_width: 4
-            border_color: black
+  bg_color: white
+  widgets:
+    - obj:
+        x: 16
+        y: 16
+        width: 96
+        height: 240
+        bg_color: black
+        bg_opa: 100%
+        border_width: 0
+    - label:
+        x: 28
+        y: 264
+        text: "LVGL"
+        text_color: black
