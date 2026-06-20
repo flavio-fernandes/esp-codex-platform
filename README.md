@@ -271,7 +271,7 @@ different local camera is attached.
 - `examples/feathers3-rgb-blink/` - board-specific FeatherS3 RGB blink smoke
   test.
 - `examples/generic-heartbeat/` - tiny heartbeat/logging smoke test.
-- `examples/magtag-lvgl-shapes/` - MagTag e-paper LVGL canvas example.
+- `examples/magtag-lvgl-shapes/` - MagTag e-paper LVGL widget example.
 - `tools/espwb-ssh` - project-local SSH wrapper.
 - `tools/espwb-status` - USB-aware workbench and slot status helper.
 - `tools/espwb-esptool` - reset-aware esptool/flashing wrapper.

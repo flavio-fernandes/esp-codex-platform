@@ -103,7 +103,7 @@ otherwise use the active `/dev/ttyACM*` or `/dev/ttyUSB*` node. Do not assume a
 fixed ACM number.
 
 ```bash
-MAGTAG_PORT=/dev/serial/by-id/usb-Espressif_ESP32-S2_7c:df:a1:01:25:f2-if00
+export MAGTAG_PORT=/dev/serial/by-id/usb-Espressif_ESP32-S2_7c:df:a1:01:25:f2-if00
 ```
 
 Flash the combined factory image at `0x0`. This is the preferred recovery and
@@ -118,8 +118,11 @@ image together:
   examples/magtag-lvgl-shapes/.esphome/build/magtag-lvgl-shapes/.pioenvs/magtag-lvgl-shapes/firmware.factory.bin
 ```
 
-After flashing, reset or unplug/replug the MagTag without holding buttons and
-verify `239a:80e5`.
+After flashing, esptool usually hard-resets the MagTag into the application. The
+USB identity may appear as a raw `/dev/ttyACM*` node instead of the Adafruit
+application ID, so prove the app with a short serial sample and, for display
+work, a camera frame. Press RESET only if the app does not start or no serial
+node appears.
 
 For USB CDC logger proof, read a short sample from the running app:
 
@@ -138,8 +141,12 @@ available in that moment.
 
 Known-good LVGL/e-paper lifecycle for this example: disable display auto-clear,
 leave the Waveshare display polling interval at `never`, use a full LVGL buffer,
-disable `update_when_display_idle`, and trigger `component.update:
-magtag_epaper` from LVGL `on_draw_end`.
+set LVGL's own `update_interval` to `never`, disable
+`update_when_display_idle`, and trigger `component.update: magtag_epaper` from
+LVGL `on_draw_end` behind a one-shot boolean guard. Set the guard before calling
+`component.update` so re-entrant draw-end events cannot request another physical
+refresh. Use `full_update_every: 30` for the static example; `1` was only a
+diagnostic setting while proving the pipeline.
 
 ## Post-flash State Check
 

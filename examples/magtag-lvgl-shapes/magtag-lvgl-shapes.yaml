@@ -15,6 +15,16 @@ logger:
   hardware_uart: USB_CDC
   level: DEBUG
 
+globals:
+  - id: magtag_epaper_refreshed
+    type: bool
+    restore_value: false
+    initial_value: "false"
+  - id: magtag_epaper_refresh_count
+    type: int
+    restore_value: false
+    initial_value: "0"
+
 output:
   - platform: gpio
     id: red_led
@@ -28,7 +38,7 @@ interval:
       - output.turn_off: red_led
   - interval: 10s
     then:
-      - logger.log: "ping output"
+      - lambda: ESP_LOGD("main", "ping output; epaper_refresh_count=%d", id(magtag_epaper_refresh_count));
 
 spi:
   clk_pin: GPIO36
@@ -44,7 +54,7 @@ display:
     model: gdew029t5
     auto_clear_enabled: false
     update_interval: never
-    full_update_every: 1
+    full_update_every: 30
 
 lvgl:
   displays:
@@ -52,20 +62,33 @@ lvgl:
   full_refresh: true
   update_when_display_idle: false
   on_draw_end:
-    - component.update: magtag_epaper
+    - if:
+        condition:
+          lambda: return !id(magtag_epaper_refreshed);
+        then:
+          - lambda: id(magtag_epaper_refreshed) = true;
+          - lambda: id(magtag_epaper_refresh_count) += 1;
+          - lambda: ESP_LOGD("main", "requesting one-shot e-paper refresh; epaper_refresh_count=%d", id(magtag_epaper_refresh_count));
+          - component.update: magtag_epaper
+  update_interval: never
   buffer_size: 100%
-  bg_color: white
+  bg_color: black
   widgets:
+    - label:
+        x: 14
+        y: 14
+        text: "MagTag LVGL"
+        text_color: white
     - obj:
         x: 16
-        y: 16
+        y: 54
         width: 96
-        height: 240
-        bg_color: black
-        bg_opa: 100%
-        border_width: 0
+        height: 196
+        bg_opa: 0%
+        border_width: 6
+        border_color: white
     - label:
         x: 28
-        y: 264
-        text: "LVGL"
-        text_color: black
+        y: 262
+        text: "RECT"
+        text_color: white

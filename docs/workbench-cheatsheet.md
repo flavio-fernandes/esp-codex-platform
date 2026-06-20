@@ -124,7 +124,7 @@ present; otherwise use the active `/dev/ttyACM*` or `/dev/ttyUSB*` node. Do not
 assume `/dev/ttyACM0`; the MagTag has appeared as `/dev/ttyACM1`.
 
 ```bash
-MAGTAG_PORT=/dev/serial/by-id/usb-Espressif_ESP32-S2_7c:df:a1:01:25:f2-if00
+export MAGTAG_PORT=/dev/serial/by-id/usb-Espressif_ESP32-S2_7c:df:a1:01:25:f2-if00
 ```
 
 Enter ESP32-S2 ROM bootloader mode, then flash the rebuilt ESPHome artifacts:
@@ -137,11 +137,13 @@ Enter ESP32-S2 ROM bootloader mode, then flash the rebuilt ESPHome artifacts:
   examples/magtag-lvgl-shapes/.esphome/build/magtag-lvgl-shapes/.pioenvs/magtag-lvgl-shapes/firmware.factory.bin
 ```
 
-After flashing, reset or unplug/replug the directly connected MagTag without
-holding any buttons, then verify:
+After flashing, esptool usually hard-resets the directly connected MagTag into
+the application. Press RESET only if the app does not start or no serial node
+appears. Then check identity if useful:
 
 ```bash
-lsusb | grep -E '239a:80e5|MagTag' || true
+lsusb | grep -E '239a:80e5|303a:0002|MagTag|Espressif' || true
+find /dev -maxdepth 1 \( -name 'ttyACM*' -o -name 'ttyUSB*' \) -print
 ```
 
 Read a short USB CDC logger sample from the running app:
@@ -161,9 +163,11 @@ The current LVGL probe prints `ping output` every 10 seconds when the app is
 running.
 
 Known-good LVGL/e-paper lifecycle for this example: `auto_clear_enabled: false`,
-`update_interval: never`, `buffer_size: 100%`,
-`update_when_display_idle: false`, and `on_draw_end` triggering
-`component.update: magtag_epaper`.
+display `update_interval: never`, `full_update_every: 30`,
+`buffer_size: 100%`,
+LVGL `update_interval: never`, `update_when_display_idle: false`, and
+`on_draw_end` triggering `component.update: magtag_epaper` behind a one-shot
+boolean guard. Set that guard before calling `component.update`.
 
 Use the local V4L2 camera directly for proof:
 
@@ -177,7 +181,7 @@ v4l2-ctl \
   --stream-to=artifacts/magtag-lvgl-shapes-final.jpg
 ```
 
-Do not use the workbench path for this MagTag walkthrough. Use direct USB for
+**Do not use the workbench path for this MagTag walkthrough.** Use direct USB for
 status, flashing, and camera proof.
 
 ## Serial Monitor

@@ -178,10 +178,10 @@ find /dev -maxdepth 1 \( -name 'ttyACM*' -o -name 'ttyUSB*' \) -print
 ```
 
 ```bash
-# Set this to the port discovered above. Prefer /dev/serial/by-id when present;
+# Export this as the port discovered above. Prefer /dev/serial/by-id when present;
 # otherwise use the active /dev/ttyACM* or /dev/ttyUSB* node. Do not assume
 # /dev/ttyACM0; the MagTag has appeared as /dev/ttyACM1 during this bring-up.
-MAGTAG_PORT=/dev/serial/by-id/usb-Espressif_ESP32-S2_7c:df:a1:01:25:f2-if00
+export MAGTAG_PORT=/dev/serial/by-id/usb-Espressif_ESP32-S2_7c:df:a1:01:25:f2-if00
 ```
 
 ```bash
@@ -211,7 +211,7 @@ Expected healthy-app serial evidence:
 
 ```text
 [I][app:060]: Running through setup()
-[D][main:333]: ping output
+[D][main:<line>]: ping output
 ```
 
 ```bash
@@ -219,7 +219,7 @@ Expected healthy-app serial evidence:
 tools/workbench-camera-capture /tmp/magtag-lvgl-widgets.jpg
 ```
 
-## Next E-Paper Smoke Step
+## Proven E-Paper Smoke Step
 
 The temporary e-paper-only smoke example intentionally kept the proven GPIO13
 blink heartbeat and added only the MagTag e-paper wiring:
@@ -241,9 +241,9 @@ display:
 ```
 
 The display lambda clears the panel and draws a border, bar, circle, triangle,
-and rectangle. It has no Wi-Fi, API, OTA, LVGL, custom PlatformIO options, or
-custom partition table. It now also has an explicit USB CDC logger setting for
-the next flash:
+and rectangle. It had no Wi-Fi, API, OTA, LVGL, custom PlatformIO options, or
+custom partition table. The later LVGL example also added explicit USB CDC
+logging:
 
 ```yaml
 logger:
@@ -272,10 +272,15 @@ The LVGL example now carries forward only the proven pieces:
 - USB CDC logger with a 10-second `ping output` heartbeat
 - `auto_clear_enabled: false` on the Waveshare display
 - `update_interval: never` on the Waveshare display
-- `full_update_every: 1` while proving the baseline
+- `full_update_every: 30` for routine use; `1` was useful only as an early
+  diagnostic full-refresh setting
 - LVGL `buffer_size: 100%`
+- LVGL `update_interval: never`
 - LVGL `update_when_display_idle: false`
-- LVGL `on_draw_end: component.update: magtag_epaper`
+- LVGL `on_draw_end` guarded by a boolean so the static example updates the
+  e-paper once after the first completed draw
+- a refresh counter in the heartbeat log so repeated physical update requests
+  are visible as `epaper_refresh_count=<n>`
 
 It deliberately does not use custom PlatformIO partition options.
 
@@ -288,6 +293,19 @@ Observed LVGL debugging results:
   trigger the desired physical refresh.
 - Explicit `on_draw_end` update rendered the large black LVGL rectangle and
   cleared the old retained panel content.
+- Without `lvgl.update_interval: never`, the explicit `on_draw_end` path can
+  cause unwanted repeated e-paper refreshes.
+- Even with `lvgl.update_interval: never`, LVGL may still emit additional draw
+  events. Guard the static example's `on_draw_end` refresh so only the first
+  completed draw triggers a physical e-paper update.
+- Set the one-shot guard before calling `component.update`; setting it after the
+  update leaves a re-entrancy window if the display update causes another LVGL
+  draw-end event.
+- The 10-second heartbeat logs the e-paper refresh request count; values above
+  `1` on a static screen indicate another update path was triggered.
+- A refresh count of `1` with continued visible flashing points at the e-paper
+  waveform/full-refresh behavior rather than repeated LVGL update requests.
+  Avoid `full_update_every: 1` after the baseline is proven.
 
 Still deferred:
 

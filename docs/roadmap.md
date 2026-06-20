@@ -19,13 +19,10 @@
   one by one. Each tool should either explicitly support or explicitly reject
   the MagTag local-USB flow, the ESP32 boards used in this repo, and workbench
   slots other than `SLOT1`.
-- Copy `config/workbench.env.example` to ignored `config/workbench.env` and
-  replace placeholder workbench values for the target environment.
 - Validate devcontainer startup after any `.devcontainer/` change.
 - Validate workbench API, SSH, and reset-aware esptool access.
 - Validate serial monitoring only when intentionally needed; keep RFC2217
   open/close tests opt-in.
-- Add one tiny board-specific ESPHome example.
 - Commit only after generated files, firmware, artifacts, and secrets are ignored.
 - Run `docs/public-release-checklist.md` before making a downstream repo public.
 
