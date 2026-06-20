@@ -90,25 +90,37 @@ and should not be disturbed. This ESPHome example uses a direct-USB,
 factory/no-OTA layout so the flash recipe stays boring: bootloader, partition
 table, and application image only.**
 
-After compiling `examples/magtag-lvgl-shapes/magtag-lvgl-shapes.yaml`, flash:
+After compiling `examples/magtag-lvgl-shapes/magtag-lvgl-shapes.yaml`, put the
+MagTag in ESP32-S2 ROM bootloader mode and find the local USB port:
 
 ```bash
-python -m esptool \
+find /dev/serial/by-id -maxdepth 1 -type l -print
+find /dev -maxdepth 1 \( -name 'ttyACM*' -o -name 'ttyUSB*' \) -print
+```
+
+Flash the combined factory image at `0x0`. This is the preferred recovery and
+bring-up command because it keeps bootloader, partition table, and application
+image together:
+
+```bash
+.venv-esptool/bin/python -m esptool \
   --chip esp32s2 \
-  --port /dev/serial/by-id/<esp32-s2-rom-loader> \
-  --before no-reset \
-  --after hard-reset \
-  write-flash \
-  --flash-mode dio \
-  --flash-freq 80m \
-  --flash-size 4MB \
-  0x1000 examples/magtag-lvgl-shapes/.esphome/build/magtag-lvgl-shapes/.pioenvs/magtag-lvgl-shapes/bootloader.bin \
-  0x8000 examples/magtag-lvgl-shapes/.esphome/build/magtag-lvgl-shapes/.pioenvs/magtag-lvgl-shapes/partitions.bin \
-  0x10000 examples/magtag-lvgl-shapes/.esphome/build/magtag-lvgl-shapes/.pioenvs/magtag-lvgl-shapes/firmware.bin
+  --port /dev/ttyACM0 \
+  write-flash 0x0 \
+  examples/magtag-lvgl-shapes/.esphome/build/magtag-lvgl-shapes/.pioenvs/magtag-lvgl-shapes/firmware.factory.bin
 ```
 
 After flashing, reset or unplug/replug the MagTag without holding buttons and
 verify `239a:80e5`.
+
+For USB CDC logger proof, read a short sample from the running app:
+
+```bash
+.venv-esptool/bin/python -c "import serial,time,sys; p='/dev/ttyACM0'; s=serial.Serial(p,115200,timeout=0.2); end=time.time()+14; data=bytearray();
+while time.time()<end:
+    data.extend(s.read(4096))
+s.close(); sys.stdout.buffer.write(data)"
+```
 
 ## Post-flash State Check
 

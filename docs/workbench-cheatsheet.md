@@ -95,8 +95,8 @@ MagTag identities used in this repo:
 ## MagTag LVGL Shapes Example
 
 `examples/magtag-lvgl-shapes/magtag-lvgl-shapes.yaml` targets the Adafruit
-MagTag 2.9 ESP32-S2. It uses the `gdew029t5` e-paper panel with LVGL canvas
-drawing actions to draw text, a circle, a triangle, and a rectangle.
+MagTag 2.9 ESP32-S2. It uses the `gdew029t5` e-paper panel with LVGL widgets
+to draw text and simple shapes.
 
 **This repo intentionally uses a much simpler MagTag partition table than the
 Adafruit_Wippersnapper_Arduino MagTag work. That project has its own constraints
@@ -123,17 +123,13 @@ Enter ESP32-S2 ROM bootloader mode, then flash the rebuilt ESPHome artifacts:
 ```bash
 .venv-esptool/bin/python -m esptool \
   --chip esp32s2 \
-  --port /dev/serial/by-id/<esp32-s2-rom-loader> \
-  --before no-reset \
-  --after hard-reset \
-  write-flash \
-  --flash-mode dio \
-  --flash-freq 80m \
-  --flash-size 4MB \
-  0x1000 examples/magtag-lvgl-shapes/.esphome/build/magtag-lvgl-shapes/.pioenvs/magtag-lvgl-shapes/bootloader.bin \
-  0x8000 examples/magtag-lvgl-shapes/.esphome/build/magtag-lvgl-shapes/.pioenvs/magtag-lvgl-shapes/partitions.bin \
-  0x10000 examples/magtag-lvgl-shapes/.esphome/build/magtag-lvgl-shapes/.pioenvs/magtag-lvgl-shapes/firmware.bin
+  --port /dev/ttyACM0 \
+  write-flash 0x0 \
+  examples/magtag-lvgl-shapes/.esphome/build/magtag-lvgl-shapes/.pioenvs/magtag-lvgl-shapes/firmware.factory.bin
 ```
+
+Use the discovered `/dev/serial/by-id/...` path when present; `/dev/ttyACM0` is
+the fallback seen during the MagTag local-USB bring-up.
 
 After flashing, reset or unplug/replug the directly connected MagTag without
 holding any buttons, then verify:
@@ -141,6 +137,18 @@ holding any buttons, then verify:
 ```bash
 lsusb | grep -E '239a:80e5|MagTag' || true
 ```
+
+Read a short USB CDC logger sample from the running app:
+
+```bash
+.venv-esptool/bin/python -c "import serial,time,sys; p='/dev/ttyACM0'; s=serial.Serial(p,115200,timeout=0.2); end=time.time()+14; data=bytearray();
+while time.time()<end:
+    data.extend(s.read(4096))
+s.close(); sys.stdout.buffer.write(data)"
+```
+
+The current LVGL probe prints `ping output` every 10 seconds when the app is
+running.
 
 Use the local V4L2 camera directly for proof:
 

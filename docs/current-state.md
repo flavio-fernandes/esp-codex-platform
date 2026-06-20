@@ -1,7 +1,8 @@
 # Current State
 
-Last updated: 2026-06-19, after the MagTag e-paper-only smoke image flashed,
-verified, and displayed the camera-visible geometry pattern.
+Last updated: 2026-06-20, after the MagTag LVGL image flashed over local USB,
+booted, and produced USB CDC heartbeat logs, but still rendered a blank e-paper
+panel.
 
 ## Repository
 
@@ -17,8 +18,11 @@ Prove the MagTag direct-USB firmware path one layer at a time, keeping each step
 observable on the physical board before adding the next subsystem.
 
 Current status: the minimal GPIO13 blink application boots after a direct USB
-factory-image flash, BOOT0 release, and physical reset, and the e-paper-only
-smoke image produced a camera-visible geometry pattern. The board is
+factory-image flash, BOOT0 release, and physical reset; the e-paper-only smoke
+image produced a camera-visible geometry pattern; and the LVGL image boots far
+enough to print a 10-second USB CDC heartbeat. The LVGL panel output is still
+blank, so the remaining problem is LVGL rendering/refresh behavior rather than
+flashing, boot, USB logging, SPI wiring, or basic e-paper refresh. The board is
 battery-backed, so unplugging USB is not a true power cycle for this test setup.
 
 Now proven:
@@ -27,11 +31,11 @@ Now proven:
 - GPIO13 red D13 blink heartbeat
 - e-paper without LVGL, using the MagTag SPI/display pins
 - camera-visible display refresh
+- USB CDC logging in the running app
 
 Not yet proven:
 
-- USB CDC logging in the running app
-- LVGL canvas drawing
+- LVGL drawing visible content on e-paper
 
 ## Proven Blink And E-Paper Baselines
 
@@ -160,6 +164,49 @@ Expected ROM identity:
 Prefer the generated `firmware.factory.bin` at `0x0` for complete-image tests.
 Plain application `firmware.bin` alone is not enough after an erase.
 
+Actual local-USB workflow used during this bring-up:
+
+```bash
+# The user runs long compiles outside Codex when usage is constrained.
+devcontainer exec --workspace-folder . esphome compile examples/magtag-lvgl-shapes/magtag-lvgl-shapes.yaml
+```
+
+```bash
+# Find the local USB device after putting the MagTag in ROM bootloader mode.
+find /dev/serial/by-id -maxdepth 1 -type l -print
+find /dev -maxdepth 1 \( -name 'ttyACM*' -o -name 'ttyUSB*' \) -print
+```
+
+```bash
+# Flash the combined factory image. Use the discovered port, often /dev/ttyACM0
+# or /dev/serial/by-id/usb-Espressif_ESP32-S2_...-if00.
+.venv-esptool/bin/python -m esptool \
+  --chip esp32s2 \
+  --port /dev/ttyACM0 \
+  write-flash 0x0 \
+  examples/magtag-lvgl-shapes/.esphome/build/magtag-lvgl-shapes/.pioenvs/magtag-lvgl-shapes/firmware.factory.bin
+```
+
+```bash
+# Read a short USB CDC log sample from the running app.
+.venv-esptool/bin/python -c "import serial,time,sys; p='/dev/ttyACM0'; s=serial.Serial(p,115200,timeout=0.2); end=time.time()+14; data=bytearray();
+while time.time()<end:
+    data.extend(s.read(4096))
+s.close(); sys.stdout.buffer.write(data)"
+```
+
+Expected healthy-app serial evidence:
+
+```text
+[I][app:060]: Running through setup()
+[D][main:333]: ping output
+```
+
+```bash
+# Capture one host-camera proof frame.
+tools/workbench-camera-capture /tmp/magtag-lvgl-widgets.jpg
+```
+
 ## Next E-Paper Smoke Step
 
 The temporary e-paper-only smoke example intentionally kept the proven GPIO13
@@ -210,12 +257,17 @@ The LVGL example now carries forward only the proven pieces:
 - `gdew029t5`
 - default generated partition table and `firmware.factory.bin` flashing at
   `0x0`
+- USB CDC logger with a 10-second `ping output` heartbeat
+- 10-second e-paper display refresh so LVGL has repeated opportunities to
+  flush before the panel update
 
 It deliberately does not use custom PlatformIO partition options.
 
 Still deferred:
 
 - Reintroduce remote monitoring only after direct USB is boringly reliable.
+- If the widget version remains blank, remove LVGL software rotation next and
+  test an unrotated minimal label.
 
 ## Target LVGL Example
 
@@ -227,7 +279,7 @@ The intended final example draws:
 
 - `MagTag LVGL` text
 - a circle
-- a triangle
+- a rotated square/diamond while the triangle path is isolated
 - a rectangle
 
 **This repo intentionally uses a much simpler MagTag partitioning approach than
