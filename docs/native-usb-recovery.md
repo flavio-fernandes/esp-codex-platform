@@ -25,8 +25,11 @@ find /dev/serial/by-id -maxdepth 1 -type l -print 2>/dev/null
 
 MagTag identities used by this repo:
 
-- `239a:80e5` -- MagTag application USB identity.
-- `303a:0002` -- Espressif ESP32-S2 ROM bootloader.
+- `239a:80e5` -- MagTag application USB identity (Adafruit/TinyUSB firmware).
+- `303a:0002` -- Espressif ESP32-S2 ROM bootloader, and also the USB identity
+  used by ESPHome Arduino firmware on the ESP32-S2. With ESPHome Arduino the
+  device stays at `303a:0002` in app mode; use serial read to confirm the app
+  is running rather than relying on the USB identity changing.
 
 ## Workbench-side helper
 
@@ -124,6 +127,23 @@ application ID, so prove the app with a short serial sample and, for display
 work, a camera frame. Press RESET only if the app does not start or no serial
 node appears.
 
+### Serial Console Monitoring
+
+To view the MagTag application logs after flashing, use one of these methods:
+
+#### Option 1: Using picocom
+
+```bash
+sudo apt install -y picocom
+timeout 30s picocom --baud 115200 /dev/ttyACM0
+```
+
+The `timeout` ensures the session exits automatically after 30 seconds. Remove it for continuous monitoring.
+
+Press RESET on the MagTag if needed to restart the application and see fresh logs.
+
+#### Option 2: Using a simple script
+
 For USB CDC logger proof, read a short sample from the running app:
 
 ```bash
@@ -132,22 +152,6 @@ while time.time()<end:
     data.extend(s.read(4096))
 s.close(); sys.stdout.buffer.write(data)"
 ```
-
-Use `/dev/serial/by-id/...` when the kernel exposes it. If that directory is
-missing or empty after a reset, use the direct `/dev/ttyACM*` or `/dev/ttyUSB*`
-node found by the command above. The MagTag app was successfully sampled on
-`/dev/ttyACM1` after a flash/reset cycle even though `/dev/serial/by-id` was not
-available in that moment.
-
-Known-good LVGL/e-paper lifecycle for this example: disable display auto-clear,
-leave the Waveshare display polling interval at `never`, use a full LVGL buffer,
-set LVGL's own `update_interval` to `never`, disable
-`update_when_display_idle`, and trigger `component.update: magtag_epaper` from
-LVGL `on_draw_end` behind a one-shot boolean guard. Use `full_update_every: 30`
-for the static example; `1` was only a diagnostic setting while proving the
-pipeline. If more than one `on_draw_end` event appears during startup, treat it
-as LVGL boot/layout settling unless `epaper_refresh_count` rises above `1`; see
-`docs/magtag-lvgl-refresh-analysis.md`.
 
 ## Post-flash State Check
 

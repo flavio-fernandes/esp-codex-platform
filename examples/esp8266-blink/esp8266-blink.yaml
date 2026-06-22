@@ -1,0 +1,33 @@
+# Targets the Witty Cloud development board (ESP-12F / ESP8266EX, 4 MB flash).
+# Witty Cloud RGB LED: Red=GPIO15, Green=GPIO12, Blue=GPIO13 (all active HIGH).
+# Button: GPIO4. LDR: A0 (ADC).
+# Blinks the blue LED; change blink_pin to GPIO12 (green) or GPIO15 (red) as needed.
+substitutions:
+  board: nodemcuv2
+  blink_pin: GPIO13
+
+esphome:
+  name: esp8266-blink
+  friendly_name: ESP8266 Blink
+
+esp8266:
+  board: ${board}
+
+logger:
+
+output:
+  - platform: gpio
+    id: status_led
+    pin:
+      number: ${blink_pin}
+      inverted: false
+
+interval:
+  - interval: 500ms
+    then:
+      - output.turn_on: status_led
+      - delay: 250ms
+      - output.turn_off: status_led
+  - interval: 10s
+    then:
+      - logger.log: "esp8266-blink heartbeat"

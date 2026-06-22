@@ -15,10 +15,13 @@
 
 ## Next project steps
 
-- TODO: build a tools validation matrix and test every script under `tools/`
-  one by one. Each tool should either explicitly support or explicitly reject
-  the MagTag local-USB flow, the ESP32 boards used in this repo, and workbench
-  slots other than `SLOT1`.
+- Built `docs/tools-validation-matrix.md`: all 8 tools tested against MagTag
+  local-USB, SLOT1 (UM FeatherS3, ESP32-S3 16 MB), and SLOT2 (Witty Cloud,
+  ESP8266EX 4 MB). Every cell is PASS, REJECT, or N/A. Added
+  `examples/esp8266-blink/esp8266-blink.yaml` for SLOT2. Fixed
+  `devcontainer.json` `containerEnv` placeholder IPs that prevented
+  `config/workbench.env` from being loaded by `espwb-status`, `espwb-monitor`,
+  and `validate-workbench.sh`.
 - Validate devcontainer startup after any `.devcontainer/` change.
 - Validate workbench API, SSH, and reset-aware esptool access.
 - Validate serial monitoring only when intentionally needed; keep RFC2217
