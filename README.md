@@ -281,6 +281,8 @@ different local camera is attached.
 - `tools/workbench-camera-capture` - optional local V4L2 camera snapshot.
 - `tools/workbench-camera-sequence` - optional timed camera snapshots.
 - `tools/validate-workbench.sh` - local toolchain and workbench validation.
+- `docs/magtag-lvgl-refresh-analysis.md` - root-cause note for MagTag LVGL
+  draw-end events and e-paper refresh behavior.
 - `docs/native-usb-recovery.md` - native USB and direct recovery guide.
 - `docs/workbench-cheatsheet.md` - command reference.
 - `docs/public-release-checklist.md` - public hygiene checks.

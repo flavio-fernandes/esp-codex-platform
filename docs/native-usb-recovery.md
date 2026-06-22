@@ -143,10 +143,11 @@ Known-good LVGL/e-paper lifecycle for this example: disable display auto-clear,
 leave the Waveshare display polling interval at `never`, use a full LVGL buffer,
 set LVGL's own `update_interval` to `never`, disable
 `update_when_display_idle`, and trigger `component.update: magtag_epaper` from
-LVGL `on_draw_end` behind a one-shot boolean guard. Set the guard before calling
-`component.update` so re-entrant draw-end events cannot request another physical
-refresh. Use `full_update_every: 30` for the static example; `1` was only a
-diagnostic setting while proving the pipeline.
+LVGL `on_draw_end` behind a one-shot boolean guard. Use `full_update_every: 30`
+for the static example; `1` was only a diagnostic setting while proving the
+pipeline. If more than one `on_draw_end` event appears during startup, treat it
+as LVGL boot/layout settling unless `epaper_refresh_count` rises above `1`; see
+`docs/magtag-lvgl-refresh-analysis.md`.
 
 ## Post-flash State Check
 

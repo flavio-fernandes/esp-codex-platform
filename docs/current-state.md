@@ -280,6 +280,8 @@ The LVGL example now carries forward only the proven pieces:
   are visible as `epaper_refresh_count=<n>`
 - unconditional LVGL draw-start/draw-end logs while finishing the example, so
   render callbacks can be distinguished from physical panel reset/power motion
+- root-cause notes for repeated startup draw-end events are in
+  `docs/magtag-lvgl-refresh-analysis.md`
 
 It deliberately does not use custom PlatformIO partition options.
 
@@ -294,12 +296,13 @@ Observed LVGL debugging results:
   cleared the old retained panel content.
 - Without `lvgl.update_interval: never`, the explicit `on_draw_end` path can
   cause unwanted repeated e-paper refreshes.
-- Even with `lvgl.update_interval: never`, LVGL may still emit additional draw
-  events. Guard the static example's `on_draw_end` refresh so only the first
-  completed draw triggers a physical e-paper update.
-- Set the one-shot guard before calling `component.update`; setting it after the
-  update leaves a re-entrancy window if the display update causes another LVGL
-  draw-end event.
+- Resolved refresh investigation: even with `lvgl.update_interval: never`, LVGL
+  may emit a short burst of extra draw-end events at boot while content-sized
+  labels and layout settle. This is not caused by `component.update:
+  magtag_epaper` re-entering LVGL.
+- Guard the static example's `on_draw_end` refresh so only the first completed
+  draw triggers a physical e-paper update. The guard-before-update ordering is
+  conservative, but the root cause is LVGL boot/layout settling.
 - The 10-second heartbeat logs the e-paper refresh request count; values above
   `1` on a static screen indicate another update path was triggered.
 - A refresh count of `1` with continued visible flashing points at the e-paper

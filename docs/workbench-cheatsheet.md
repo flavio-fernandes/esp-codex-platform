@@ -167,7 +167,9 @@ display `update_interval: never`, `full_update_every: 30`,
 `buffer_size: 100%`,
 LVGL `update_interval: never`, `update_when_display_idle: false`, and
 `on_draw_end` triggering `component.update: magtag_epaper` behind a one-shot
-boolean guard. Set that guard before calling `component.update`.
+boolean guard. Repeated startup `on_draw_end` events are expected LVGL
+boot/layout settling unless `epaper_refresh_count` rises above `1`; see
+`docs/magtag-lvgl-refresh-analysis.md`.
 
 Use the local V4L2 camera directly for proof:
 

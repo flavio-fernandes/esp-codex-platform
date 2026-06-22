@@ -85,6 +85,12 @@ lvgl:
           - lambda: id(magtag_epaper_refresh_count) += 1;
           - lambda: ESP_LOGD("main", "requesting one-shot e-paper refresh; epaper_refresh_count=%d", id(magtag_epaper_refresh_count));
           - component.update: magtag_epaper
+          # Freeze LVGL once the static frame is committed to the panel. The
+          # guard above is what prevents repeated physical updates; pausing is
+          # optional, but keeps this diagnostic example quiet after boot/layout
+          # settling. show_snow:false keeps the panel content as-is.
+          - lvgl.pause:
+              show_snow: false
   update_interval: never
   buffer_size: 100%
   bg_color: black
