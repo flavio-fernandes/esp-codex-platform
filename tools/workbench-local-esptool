@@ -1,0 +1,411 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+RAW_SLOT="${1:-SLOT1}"
+SLOT_EXPLICIT=false
+if [[ "$RAW_SLOT" =~ ^[Ss][Ll][Oo][Tt][0-9]+$ ]]; then
+  SLOT="$(printf '%s' "$RAW_SLOT" | tr '[:lower:]' '[:upper:]')"
+  SLOT_EXPLICIT=true
+  shift || true
+else
+  SLOT="SLOT1"
+fi
+
+if [[ "$#" -eq 0 ]]; then
+  set -- chip-id
+fi
+
+API_URL="${ESPWB_LOCAL_API_URL:-http://127.0.0.1:8080}"
+PORTAL_SERVICE="${ESPWB_LOCAL_PORTAL_SERVICE:-rfc2217-portal}"
+REENUMERATE_WAIT="${ESPWB_LOCAL_REENUMERATE_WAIT:-12}"
+REENUMERATE_INTERVAL="${ESPWB_LOCAL_REENUMERATE_INTERVAL:-0.5}"
+POST_ESPTOOL_SETTLE="${ESPWB_LOCAL_POST_ESPTOOL_SETTLE:-8}"
+ESPTOOL_ATTEMPTS="${ESPWB_LOCAL_ESPTOOL_ATTEMPTS:-3}"
+PORTAL_START_ATTEMPTS="${ESPWB_LOCAL_PORTAL_START_ATTEMPTS:-5}"
+PORTAL_START_INTERVAL="${ESPWB_LOCAL_PORTAL_START_INTERVAL:-2}"
+PORTAL_PORT_OVERRIDE="${ESPWB_LOCAL_PORTAL_PORT:-}"
+GPIO_RESET="${ESPWB_LOCAL_GPIO_RESET:-0}"
+GPIO_BOOT="${ESPWB_LOCAL_GPIO_BOOT:-18}"
+GPIO_EN="${ESPWB_LOCAL_GPIO_EN:-17}"
+
+ESPTOOL_SUCCEEDED=false
+SLOT_TCP_PORT=""
+DEV=""
+ORIGINAL_ID_PATH=""
+ORIGINAL_DEVPATH_PARENT=""
+
+need() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "ERROR: missing required command: $1" >&2
+    exit 1
+  }
+}
+
+need curl
+need flock
+need python3
+need sudo
+need systemctl
+need udevadm
+
+LOCK_DIR="/tmp/espwb-local-esptool-${UID}"
+mkdir -p "$LOCK_DIR"
+chmod 700 "$LOCK_DIR" 2>/dev/null || true
+exec 9>"${LOCK_DIR}/lock"
+if ! flock -n 9; then
+  echo "ERROR: another ESP workbench operation is already running" >&2
+  exit 65
+fi
+
+single_serial_fallback() {
+  local -a serials=()
+  mapfile -t serials < <(find /dev -maxdepth 1 \( -name 'ttyUSB*' -o -name 'ttyACM*' \) -print 2>/dev/null | sort)
+  case "${#serials[@]}" in
+    0)
+      echo "ERROR: no serial devices found" >&2
+      return 66
+      ;;
+    1)
+      printf '%s\n' "${serials[0]}"
+      ;;
+    *)
+      echo "ERROR: multiple serial devices exist and ${SLOT} could not be resolved safely" >&2
+      printf '  %s\n' "${serials[@]}" >&2
+      echo "Refusing to guess. Check ${API_URL}/api/devices." >&2
+      return 69
+      ;;
+  esac
+}
+
+lookup_slot() {
+  local json
+  json="$(curl -fsS --max-time 3 "${API_URL}/api/devices" 2>/dev/null || true)"
+  if [[ -z "$json" ]]; then
+    printf 'NO_API\n'
+    return 0
+  fi
+
+  python3 -c '
+import json
+import sys
+
+slot = sys.argv[1].upper()
+data = json.load(sys.stdin)
+for item in data.get("slots", []):
+    if str(item.get("label", "")).upper() != slot:
+        continue
+    devnode = item.get("devnode")
+    tcp_port = item.get("tcp_port") or ""
+    if devnode:
+        print("DEV\t{}\t{}".format(devnode, tcp_port))
+    else:
+        print("ABSENT")
+    raise SystemExit(0)
+print("MISSING")
+' "$SLOT" <<<"$json"
+}
+
+udev_property() {
+  local devnode="$1"
+  local property="$2"
+  udevadm info -q property -n "$devnode" 2>/dev/null \
+    | sed -n "s/^${property}=//p" \
+    | head -n 1
+}
+
+devpath_parent() {
+  local devnode="$1"
+  local devpath
+  devpath="$(udev_property "$devnode" DEVPATH)"
+  [[ -n "$devpath" ]] || return 0
+  printf '%s\n' "${devpath%/tty/*}"
+}
+
+capture_device_identity() {
+  local devnode="$1"
+  local id_path parent vendor model product
+  id_path="$(udev_property "$devnode" ID_PATH)"
+  parent="$(devpath_parent "$devnode")"
+  vendor="$(udev_property "$devnode" ID_VENDOR_ID)"
+  model="$(udev_property "$devnode" ID_MODEL_ID)"
+  product="$(udev_property "$devnode" ID_MODEL_FROM_DATABASE)"
+  [[ -n "$product" ]] || product="$(udev_property "$devnode" ID_MODEL)"
+  printf '%s\n%s\n%s\n%s\n%s\n' "$id_path" "$parent" "$vendor" "$model" "$product"
+}
+
+matching_serial_devices() {
+  local original_id_path="$1"
+  local original_parent="$2"
+  local candidate candidate_id_path candidate_parent
+
+  for candidate in /dev/ttyACM* /dev/ttyUSB*; do
+    [[ -e "$candidate" ]] || continue
+    candidate_id_path="$(udev_property "$candidate" ID_PATH)"
+    if [[ -n "$original_id_path" && "$candidate_id_path" == "$original_id_path" ]]; then
+      printf '%s\n' "$candidate"
+      continue
+    fi
+    candidate_parent="$(devpath_parent "$candidate")"
+    if [[ -n "$original_parent" && "$candidate_parent" == "$original_parent" ]]; then
+      printf '%s\n' "$candidate"
+    fi
+  done
+}
+
+resolve_after_portal_stop() {
+  local original_dev="$1"
+  local original_id_path="$2"
+  local original_parent="$3"
+  local deadline now
+  local -a matches=()
+
+  deadline="$(python3 -c 'import sys,time; print(time.monotonic()+float(sys.argv[1]))' "$REENUMERATE_WAIT")"
+  while :; do
+    if [[ -n "$original_dev" && -e "$original_dev" ]]; then
+      printf '%s\n' "$original_dev"
+      return 0
+    fi
+
+    mapfile -t matches < <(matching_serial_devices "$original_id_path" "$original_parent")
+    case "${#matches[@]}" in
+      0) ;;
+      1)
+        printf '%s\n' "${matches[0]}"
+        return 0
+        ;;
+      *)
+        echo "ERROR: multiple serial devices match ${SLOT} topology after portal stop" >&2
+        printf '  %s\n' "${matches[@]}" >&2
+        return 69
+        ;;
+    esac
+
+    now="$(python3 -c 'import time; print(time.monotonic())')"
+    if python3 -c 'import sys; sys.exit(0 if float(sys.argv[1]) >= float(sys.argv[2]) else 1)' "$now" "$deadline"; then
+      return 67
+    fi
+    sleep "$REENUMERATE_INTERVAL"
+  done
+}
+
+port_is_listening() {
+  local port="$1"
+  python3 - "$port" <<'PY'
+import socket
+import sys
+
+try:
+    with socket.create_connection(("127.0.0.1", int(sys.argv[1])), timeout=1.0):
+        pass
+except OSError:
+    raise SystemExit(1)
+PY
+}
+
+restart_portal() {
+  local expected_port="${PORTAL_PORT_OVERRIDE:-$SLOT_TCP_PORT}"
+  local attempt
+
+  for ((attempt = 1; attempt <= PORTAL_START_ATTEMPTS; attempt++)); do
+    echo "== restarting ${PORTAL_SERVICE} (attempt ${attempt}/${PORTAL_START_ATTEMPTS}) =="
+    sudo systemctl restart "$PORTAL_SERVICE" >/dev/null 2>&1 || true
+
+    if sudo systemctl is-active --quiet "$PORTAL_SERVICE"; then
+      if [[ -n "$expected_port" ]]; then
+        if port_is_listening "$expected_port"; then
+          echo "== ${PORTAL_SERVICE} is active and TCP ${expected_port} is listening =="
+          return 0
+        fi
+        echo "WARNING: ${PORTAL_SERVICE} is active but TCP ${expected_port} is not listening yet" >&2
+      elif curl -fsS --max-time 2 "${API_URL}/api/info" >/dev/null 2>&1; then
+        echo "== ${PORTAL_SERVICE} API is ready =="
+        return 0
+      else
+        echo "WARNING: ${PORTAL_SERVICE} is active but its API is not ready yet" >&2
+      fi
+    else
+      echo "WARNING: ${PORTAL_SERVICE} is not active after restart" >&2
+    fi
+
+    sleep "$PORTAL_START_INTERVAL"
+  done
+
+  echo "ERROR: ${PORTAL_SERVICE} did not become ready" >&2
+  sudo systemctl --no-pager --full status "$PORTAL_SERVICE" >&2 || true
+  sudo journalctl -u "$PORTAL_SERVICE" -n 80 --no-pager >&2 || true
+  return 68
+}
+
+release_boot_and_pulse_en() {
+  [[ "$GPIO_RESET" == "1" ]] || return 0
+  echo "== releasing BOOT GPIO${GPIO_BOOT} and pulsing EN GPIO${GPIO_EN} =="
+  sudo python3 - "$GPIO_BOOT" "$GPIO_EN" <<'PY'
+import sys
+import time
+
+import gpiod
+
+boot = int(sys.argv[1])
+en = int(sys.argv[2])
+chip = gpiod.Chip("/dev/gpiochip0")
+requests = []
+try:
+    boot_req = chip.request_lines(
+        consumer="espwb-local-esptool",
+        config={
+            boot: gpiod.LineSettings(
+                direction=gpiod.line.Direction.INPUT,
+                bias=gpiod.line.Bias.PULL_UP,
+            )
+        },
+    )
+    requests.append(boot_req)
+    en_req = chip.request_lines(
+        consumer="espwb-local-esptool",
+        config={
+            en: gpiod.LineSettings(
+                direction=gpiod.line.Direction.OUTPUT,
+                output_value=gpiod.line.Value.ACTIVE,
+            )
+        },
+    )
+    requests.append(en_req)
+    time.sleep(0.05)
+    en_req.set_value(en, gpiod.line.Value.INACTIVE)
+    time.sleep(0.15)
+    en_req.set_value(en, gpiod.line.Value.ACTIVE)
+    time.sleep(0.25)
+finally:
+    for request in requests:
+        request.release()
+PY
+}
+
+cleanup() {
+  local rc=$?
+  local portal_rc=0
+  trap - EXIT INT TERM
+  set +e
+
+  if [[ "$ESPTOOL_SUCCEEDED" == "true" ]]; then
+    release_boot_and_pulse_en
+    if [[ "$POST_ESPTOOL_SETTLE" != "0" ]]; then
+      echo "== waiting ${POST_ESPTOOL_SETTLE}s for USB to settle before portal restart =="
+      sleep "$POST_ESPTOOL_SETTLE"
+    fi
+  fi
+
+  restart_portal
+  portal_rc=$?
+  if [[ "$rc" -eq 0 && "$portal_rc" -ne 0 ]]; then
+    rc=$portal_rc
+  fi
+  exit "$rc"
+}
+
+slot_result="$(lookup_slot || true)"
+result_kind="${slot_result%%$'\t'*}"
+case "$result_kind" in
+  DEV)
+    IFS=$'\t' read -r _ DEV SLOT_TCP_PORT <<<"$slot_result"
+    ;;
+  ABSENT)
+    echo "ERROR: ${SLOT} is configured but no board is present there" >&2
+    exit 66
+    ;;
+  MISSING)
+    echo "ERROR: ${SLOT} is not known by the workbench portal" >&2
+    exit 66
+    ;;
+  NO_API)
+    if [[ "$SLOT_EXPLICIT" == "true" ]]; then
+      echo "WARNING: workbench API unavailable; using serial fallback only if exactly one device exists" >&2
+    fi
+    DEV="$(single_serial_fallback)"
+    ;;
+  *)
+    echo "ERROR: unexpected slot lookup result: $slot_result" >&2
+    exit 70
+    ;;
+esac
+
+if [[ -z "$DEV" || ! -e "$DEV" ]]; then
+  echo "ERROR: resolved device ${DEV:-empty} does not exist" >&2
+  exit 67
+fi
+
+if [[ -z "$SLOT_TCP_PORT" && "$SLOT" =~ ^SLOT([0-9]+)$ ]]; then
+  SLOT_TCP_PORT=$((4000 + 10#${BASH_REMATCH[1]}))
+fi
+
+mapfile -t identity < <(capture_device_identity "$DEV")
+ORIGINAL_ID_PATH="${identity[0]:-}"
+ORIGINAL_DEVPATH_PARENT="${identity[1]:-}"
+USB_VENDOR="${identity[2]:-}"
+USB_MODEL="${identity[3]:-}"
+USB_PRODUCT="${identity[4]:-}"
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+echo "== using ${SLOT} device ${DEV} on workbench =="
+[[ -n "$ORIGINAL_ID_PATH" ]] && echo "== ${SLOT} USB topology: ${ORIGINAL_ID_PATH} =="
+[[ -n "$USB_VENDOR$USB_MODEL" ]] && echo "== ${SLOT} USB identity: ${USB_PRODUCT:-unknown} (${USB_VENDOR:-????}:${USB_MODEL:-????}) =="
+echo "== stopping ${PORTAL_SERVICE} temporarily =="
+sudo systemctl stop "$PORTAL_SERVICE"
+sleep 0.5
+
+if ! resolved_dev="$(resolve_after_portal_stop "$DEV" "$ORIGINAL_ID_PATH" "$ORIGINAL_DEVPATH_PARENT")"; then
+  echo "ERROR: ${DEV} did not reappear after stopping ${PORTAL_SERVICE}" >&2
+  echo "No serial device appeared on the original USB topology within ${REENUMERATE_WAIT}s." >&2
+  exit 67
+fi
+if [[ "$resolved_dev" != "$DEV" ]]; then
+  echo "== ${SLOT} re-enumerated from ${DEV} to ${resolved_dev} =="
+  DEV="$resolved_dev"
+fi
+
+HAS_BEFORE=false
+HAS_AFTER=false
+for arg in "$@"; do
+  case "$arg" in
+    --before) HAS_BEFORE=true ;;
+    --after) HAS_AFTER=true ;;
+  esac
+done
+
+before_mode="default-reset"
+for ((attempt = 1; attempt <= ESPTOOL_ATTEMPTS; attempt++)); do
+  opts=(--port "$DEV")
+  [[ "$HAS_BEFORE" == "true" ]] || opts+=(--before "$before_mode")
+  [[ "$HAS_AFTER" == "true" ]] || opts+=(--after hard-reset)
+
+  if [[ "$attempt" -gt 1 ]]; then
+    echo "== retrying esptool on ${DEV} (attempt ${attempt}/${ESPTOOL_ATTEMPTS}, before=${before_mode}) =="
+  fi
+
+  set +e
+  python3 -m esptool "${opts[@]}" "$@"
+  rc=$?
+  set -e
+  if [[ "$rc" -eq 0 ]]; then
+    ESPTOOL_SUCCEEDED=true
+    exit 0
+  fi
+  if [[ "$attempt" -ge "$ESPTOOL_ATTEMPTS" ]]; then
+    exit "$rc"
+  fi
+
+  echo "WARNING: esptool failed with exit code ${rc}; waiting for USB re-enumeration before retry" >&2
+  if ! resolved_dev="$(resolve_after_portal_stop "$DEV" "$ORIGINAL_ID_PATH" "$ORIGINAL_DEVPATH_PARENT")"; then
+    echo "ERROR: ${SLOT} device did not reappear for esptool retry" >&2
+    exit "$rc"
+  fi
+  if [[ "$resolved_dev" != "$DEV" ]]; then
+    echo "== ${SLOT} re-enumerated from ${DEV} to ${resolved_dev} =="
+    DEV="$resolved_dev"
+  fi
+  [[ "$HAS_BEFORE" == "true" ]] || before_mode="no-reset"
+  sleep 1
+done

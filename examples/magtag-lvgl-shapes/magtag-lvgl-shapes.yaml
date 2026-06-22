@@ -1,0 +1,137 @@
+substitutions:
+  name: magtag-lvgl-shapes
+  friendly_name: MagTag LVGL Shapes
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+
+esp32:
+  board: adafruit_magtag29_esp32s2
+  framework:
+    type: arduino
+
+logger:
+  hardware_uart: USB_CDC
+  level: DEBUG
+
+globals:
+  - id: magtag_epaper_refreshed
+    type: bool
+    restore_value: false
+    initial_value: "false"
+  - id: magtag_epaper_refresh_count
+    type: int
+    restore_value: false
+    initial_value: "0"
+
+output:
+  - platform: gpio
+    id: red_led
+    pin: GPIO13
+
+interval:
+  - interval: 1s
+    then:
+      - output.turn_on: red_led
+      - delay: 500ms
+      - output.turn_off: red_led
+  - interval: 10s
+    then:
+      - lambda: |-
+          ESP_LOGD(
+            "main",
+            "ping output; epaper_refreshed=%s epaper_refresh_count=%d",
+            id(magtag_epaper_refreshed) ? "true" : "false",
+            id(magtag_epaper_refresh_count)
+          );
+
+spi:
+  clk_pin: GPIO36
+  mosi_pin: GPIO35
+
+display:
+  - platform: waveshare_epaper
+    id: magtag_epaper
+    cs_pin: GPIO8
+    dc_pin: GPIO7
+    busy_pin: GPIO5
+    reset_pin: GPIO6
+    model: gdew029t5
+    auto_clear_enabled: false
+    update_interval: never
+    full_update_every: 30
+
+lvgl:
+  displays:
+    - magtag_epaper
+  full_refresh: true
+  update_when_display_idle: false
+  on_draw_start:
+    - lambda: ESP_LOGD("main", "LVGL draw start");
+  on_draw_end:
+    - lambda: |-
+        ESP_LOGD(
+          "main",
+          "LVGL draw end; epaper_refreshed=%s epaper_refresh_count=%d",
+          id(magtag_epaper_refreshed) ? "true" : "false",
+          id(magtag_epaper_refresh_count)
+        );
+    - if:
+        condition:
+          lambda: return !id(magtag_epaper_refreshed);
+        then:
+          - lambda: id(magtag_epaper_refreshed) = true;
+          - lambda: id(magtag_epaper_refresh_count) += 1;
+          - lambda: ESP_LOGD("main", "requesting one-shot e-paper refresh; epaper_refresh_count=%d", id(magtag_epaper_refresh_count));
+          - component.update: magtag_epaper
+          # Freeze LVGL once the static frame is committed to the panel. The
+          # guard above is what prevents repeated physical updates; pausing is
+          # optional, but keeps this diagnostic example quiet after boot/layout
+          # settling. show_snow:false keeps the panel content as-is.
+          - lvgl.pause:
+              show_snow: false
+  update_interval: never
+  buffer_size: 100%
+  bg_color: black
+  widgets:
+    - label:
+        x: 14
+        y: 14
+        text: "MagTag LVGL"
+        text_color: white
+    - obj:
+        x: 16
+        y: 54
+        width: 96
+        height: 196
+        bg_opa: 0%
+        border_width: 6
+        border_color: white
+    - obj:
+        x: 34
+        y: 92
+        width: 60
+        height: 60
+        radius: 30
+        bg_opa: 0%
+        border_width: 6
+        border_color: white
+    - line:
+        points:
+          - x: 64
+            y: 170
+          - x: 36
+            y: 226
+          - x: 92
+            y: 226
+          - x: 64
+            y: 170
+        line_width: 6
+        line_color: white
+        line_rounded: true
+    - label:
+        x: 20
+        y: 262
+        text: "ALL SHAPES"
+        text_color: white

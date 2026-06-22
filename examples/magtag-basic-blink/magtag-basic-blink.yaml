@@ -1,0 +1,25 @@
+esphome:
+  name: magtag-basic-blink
+
+esp32:
+  board: adafruit_magtag29_esp32s2
+  framework:
+    type: arduino
+
+logger:
+  hardware_uart: USB_CDC
+
+output:
+  - platform: gpio
+    id: red_led
+    pin: GPIO13
+
+interval:
+  - interval: 1s
+    then:
+      - output.turn_on: red_led
+      - delay: 500ms
+      - output.turn_off: red_led
+  - interval: 10s
+    then:
+      - logger.log: "magtag-basic-blink heartbeat"

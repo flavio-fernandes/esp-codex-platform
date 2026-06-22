@@ -5,7 +5,10 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/workbench-env
 source "${SCRIPT_DIR}/lib/workbench-env"
 load_workbench_env \
-  ESPWB_SLOT ALLOW_NON_SLOT1 ESP_PORT RUN_RFC2217_TEST ESPWB_SSH_KEY
+  ESPWB_SLOT ALLOW_NON_SLOT1 ESP_PORT RUN_RFC2217_TEST ESPWB_SSH_KEY \
+  ESPWB_KNOWN_HOSTS ESPWB_SSH_CONNECT_TIMEOUT \
+  ESPWB_SSH_SERVER_ALIVE_INTERVAL ESPWB_SSH_SERVER_ALIVE_COUNT_MAX \
+  STATIC_ONLY
 
 WORKBENCH_IP="${WORKBENCH_IP:-192.0.2.10}"
 WORKBENCH_URL="${WORKBENCH_URL:-http://${WORKBENCH_IP}:8080}"
@@ -13,6 +16,7 @@ ESPWB_SLOT="${ESPWB_SLOT:-SLOT1}"
 ALLOW_NON_SLOT1="${ALLOW_NON_SLOT1:-0}"
 ESP_PORT="${ESP_PORT:-rfc2217://${WORKBENCH_IP}:4001?ign_set_control}"
 RUN_RFC2217_TEST="${RUN_RFC2217_TEST:-0}"
+STATIC_ONLY="${STATIC_ONLY:-0}"
 
 if [[ "$ESPWB_SLOT" != "SLOT1" && "$ALLOW_NON_SLOT1" != "1" ]]; then
   echo "Refusing to validate ESPWB_SLOT=$ESPWB_SLOT; only SLOT1 is allowed by default." >&2
@@ -55,6 +59,36 @@ check_cmd unzip
 check_cmd python3
 check_cmd esphome
 
+check_executable() {
+  if [[ -x "$1" ]]; then
+    pass "project helper is executable: $1"
+  else
+    fail "project helper is missing or not executable: $1"
+  fi
+}
+
+check_executable tools/espwb-esptool
+check_executable tools/espwb-monitor
+check_executable tools/espwb-ssh
+check_executable tools/espwb-status
+check_executable tools/workbench-local-esptool
+
+if [[ "$STATIC_ONLY" == "1" ]]; then
+  printf '[SKIP] Workbench network and board checks skipped because STATIC_ONLY=1.\n'
+  printf '\nSummary:\n'
+  printf '  Pass: %s\n' "${#PASS[@]}"
+  printf '  Fail: %s\n' "${#FAIL[@]}"
+
+  if [[ "${#FAIL[@]}" -gt 0 ]]; then
+    printf '\nFailures:\n'
+    printf '  - %s\n' "${FAIL[@]}"
+    exit 1
+  fi
+
+  printf '\nvalidate-workbench.sh static checks PASSED\n'
+  exit 0
+fi
+
 if python3 -m esptool version >/tmp/esptool-version.txt 2>&1; then
   pass "python3 -m esptool works"
   cat /tmp/esptool-version.txt
@@ -83,6 +117,14 @@ if tools/espwb-ssh test -x /usr/local/bin/espwb-local-esptool >/tmp/workbench-he
 else
   fail "SSH to workbench/helper check failed"
   cat /tmp/workbench-helper-check.txt || true
+fi
+
+if tools/espwb-status >/tmp/espwb-status.txt 2>&1; then
+  pass "non-destructive workbench status helper ran"
+  sed -n '1,120p' /tmp/espwb-status.txt
+else
+  fail "non-destructive workbench status helper failed"
+  sed -n '1,160p' /tmp/espwb-status.txt || true
 fi
 
 if tools/espwb-esptool flash-id >/tmp/espwb-flash-id.txt 2>&1; then

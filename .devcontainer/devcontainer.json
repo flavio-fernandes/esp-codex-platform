@@ -13,11 +13,8 @@
   "remoteUser": "vscode",
   "updateRemoteUserUID": false,
   "containerEnv": {
-    "WORKBENCH_IP": "192.0.2.10",
     "WORKBENCH_USER": "pi",
-    "WORKBENCH_URL": "http://192.0.2.10:8080",
     "ESPWB_SLOT": "SLOT1",
-    "ESP_PORT": "rfc2217://192.0.2.10:4001?ign_set_control",
     "PLATFORMIO_CORE_DIR": "/cache/platformio",
     "PIP_CACHE_DIR": "/cache/pip"
   },

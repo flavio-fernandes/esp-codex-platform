@@ -15,6 +15,7 @@ Mac/workstation -> VS Code SSH -> Linux host -> Docker/devcontainer -> ESP workb
 
 - ESPHome devcontainer based on the stable ESPHome image.
 - Project-local workbench wrappers in `tools/`.
+- USB-aware workbench status through `tools/espwb-status`.
 - Reset-aware `chip-id`, `flash-id`, `read-flash`, and `write-flash` through
   `tools/espwb-esptool`.
 - RFC2217 serial monitoring through `tools/espwb-monitor`.
@@ -94,7 +95,7 @@ local defaults; command-specific environment variables such as
 Build or open the devcontainer:
 
 ```bash
-devcontainer up --workspace-folder .
+devcontainer up --workspace-folder . --remove-existing-container
 devcontainer exec --workspace-folder . esphome version
 devcontainer exec --workspace-folder . tools/validate-workbench.sh
 ```
@@ -152,6 +153,18 @@ devcontainer exec --workspace-folder . tools/espwb-esptool write-flash 0x0 examp
 
 ## Workbench Tools
 
+Start with status when the workbench state is unclear:
+
+```bash
+devcontainer exec --workspace-folder . tools/espwb-status
+```
+
+The status helper checks host, SSH, API, and serial-socket reachability, then
+prints the selected slot state and USB identities reported by the workbench API.
+Treat `serial: reachable` as a portal-socket check only; it does not prove that
+the application firmware is awake or responding. Native USB boards can expose
+different identities for application firmware, ROM bootloader, and deep sleep.
+
 `tools/espwb-esptool` SSHs to the workbench and calls the reset-aware helper
 there. Use it for esptool operations and flashing:
 
@@ -196,8 +209,8 @@ ESP32-S3 USB-Serial/JTAG boards this often means the board was left in
 `DOWNLOAD(USB/UART0)` and needs a plain reset with BOOT released.
 
 If `flash-id` fails with a pySerial write timeout and the workbench API reports
-the board in application or UF2 USB identity instead of Espressif ROM/download
-mode, the board has not entered the ROM bootloader. For boards like the
+the board in application USB identity instead of Espressif ROM/download mode,
+the board has not entered the ROM bootloader. For boards like the
 UnexpectedMaker FeatherS3, the manual recovery sequence is BOOT held while
 RESET is pressed and released; unattended recovery needs equivalent BOOT/RESET
 wiring in the workbench fixture.
@@ -258,12 +271,19 @@ different local camera is attached.
 - `examples/feathers3-rgb-blink/` - board-specific FeatherS3 RGB blink smoke
   test.
 - `examples/generic-heartbeat/` - tiny heartbeat/logging smoke test.
+- `examples/magtag-lvgl-shapes/` - MagTag e-paper LVGL widget example.
 - `tools/espwb-ssh` - project-local SSH wrapper.
+- `tools/espwb-status` - USB-aware workbench and slot status helper.
 - `tools/espwb-esptool` - reset-aware esptool/flashing wrapper.
 - `tools/espwb-monitor` - RFC2217 serial monitor wrapper.
+- `tools/workbench-local-esptool` - reference helper installed on the workbench
+  as `/usr/local/bin/espwb-local-esptool`.
 - `tools/workbench-camera-capture` - optional local V4L2 camera snapshot.
 - `tools/workbench-camera-sequence` - optional timed camera snapshots.
 - `tools/validate-workbench.sh` - local toolchain and workbench validation.
+- `docs/magtag-lvgl-refresh-analysis.md` - root-cause note for MagTag LVGL
+  draw-end events and e-paper refresh behavior.
+- `docs/native-usb-recovery.md` - native USB and direct recovery guide.
 - `docs/workbench-cheatsheet.md` - command reference.
 - `docs/public-release-checklist.md` - public hygiene checks.
 

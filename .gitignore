@@ -32,6 +32,8 @@ id_*
 # Local artifacts and logs
 artifacts/
 *.log
+__pycache__/
+*.py[cod]
 
 # OS/editor noise
 .DS_Store

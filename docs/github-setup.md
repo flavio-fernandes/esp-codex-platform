@@ -18,7 +18,7 @@ Do not push if any of these are tracked:
 - `secrets.yaml`
 - `.env` or `.env.*`
 - private keys
-- firmware binaries such as `*.bin`, `*.elf`, `*.uf2`, `*.factory.bin`, or `*.ota.bin`
+- firmware binaries such as `*.bin`, `*.elf`, `*.factory.bin`, or `*.ota.bin`
 - `artifacts/`
 - `.esphome/`
 - local workbench config such as `config/workbench.env`

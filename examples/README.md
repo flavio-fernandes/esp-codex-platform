@@ -7,6 +7,9 @@ flashing path.
 - `generic-heartbeat/` logs a heartbeat and toggles one GPIO output.
 - `feathers3-rgb-blink/` drives the Unexpected Maker FeatherS3 RGB LED
   through its LDO2 power pin.
+- `magtag-basic-blink/` toggles the Adafruit MagTag red D13 LED on GPIO13.
+- `magtag-lvgl-shapes/` targets the Adafruit MagTag 2.9 ESP32-S2 e-paper
+  display with LVGL widgets and an explicit e-paper refresh lifecycle.
 - `esp32-devkit-gpio2-blink/` targets common CP2102 ESP32 DevKit-style boards
   with an ESP32-D0WD chip, 4MB flash, and a visible blue LED on GPIO2.
 

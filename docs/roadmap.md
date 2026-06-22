@@ -15,13 +15,17 @@
 
 ## Next project steps
 
-- Copy `config/workbench.env.example` to ignored `config/workbench.env` and
-  replace placeholder workbench values for the target environment.
+- Built `docs/tools-validation-matrix.md`: all 8 tools tested against MagTag
+  local-USB, SLOT1 (UM FeatherS3, ESP32-S3 16 MB), and SLOT2 (Witty Cloud,
+  ESP8266EX 4 MB). Every cell is PASS, REJECT, or N/A. Added
+  `examples/esp8266-blink/esp8266-blink.yaml` for SLOT2. Fixed
+  `devcontainer.json` `containerEnv` placeholder IPs that prevented
+  `config/workbench.env` from being loaded by `espwb-status`, `espwb-monitor`,
+  and `validate-workbench.sh`.
 - Validate devcontainer startup after any `.devcontainer/` change.
 - Validate workbench API, SSH, and reset-aware esptool access.
 - Validate serial monitoring only when intentionally needed; keep RFC2217
   open/close tests opt-in.
-- Add one tiny board-specific ESPHome example.
 - Commit only after generated files, firmware, artifacts, and secrets are ignored.
 - Run `docs/public-release-checklist.md` before making a downstream repo public.
 
