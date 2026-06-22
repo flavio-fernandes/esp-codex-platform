@@ -95,7 +95,7 @@ local defaults; command-specific environment variables such as
 Build or open the devcontainer:
 
 ```bash
-devcontainer up --workspace-folder .
+devcontainer up --workspace-folder . --remove-existing-container
 devcontainer exec --workspace-folder . esphome version
 devcontainer exec --workspace-folder . tools/validate-workbench.sh
 ```

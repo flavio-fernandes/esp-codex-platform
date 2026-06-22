@@ -17,7 +17,7 @@
 ## Devcontainer
 
 ```bash
-devcontainer up --workspace-folder .
+devcontainer up --workspace-folder . --remove-existing-container
 devcontainer exec --workspace-folder . esphome version
 devcontainer exec --workspace-folder . tools/validate-workbench.sh
 devcontainer exec --workspace-folder . tools/espwb-status
