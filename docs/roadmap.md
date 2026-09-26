@@ -10,6 +10,9 @@
   `running` state when the RFC2217 TCP port is reachable.
 - Added validation script pattern.
 - Added optional generic workbench camera capture helpers.
+- Moved the camera onto the workbench, added RP2040/RP2350 flashing, a restricted
+  audited agent interface, and a rebuild runbook
+  (`docs/workbench-build-from-scratch.md`); upgraded the bench to Embedded-AI-Harness v1.0.1.
 - Documented host, devcontainer, and workbench prerequisites.
 - Added generic ESPHome examples.
 

@@ -11,7 +11,7 @@
 - SSH to `${WORKBENCH_USER}@${WORKBENCH_IP}` works.
 - `/usr/local/bin/espwb-local-esptool` exists on the workbench.
 - `SLOT1` is the safe default slot.
-- Optional camera capture requires a local V4L2 camera and `v4l2-ctl` on the
+- Camera capture goes through the bench (`tools/wb snap`); a local camera needs `v4l2-ctl` on the
   Linux host.
 
 ## Devcontainer
@@ -124,7 +124,7 @@ present; otherwise use the active `/dev/ttyACM*` or `/dev/ttyUSB*` node. Do not
 assume `/dev/ttyACM0`; the MagTag has appeared as `/dev/ttyACM1`.
 
 ```bash
-export MAGTAG_PORT=/dev/serial/by-id/usb-Espressif_ESP32-S2_7c:df:a1:01:25:f2-if00
+export MAGTAG_PORT=/dev/serial/by-id/usb-Espressif_ESP32-S2_<mac>-if00
 ```
 
 Enter ESP32-S2 ROM bootloader mode, then flash the rebuilt ESPHome artifacts:
@@ -204,12 +204,16 @@ RFC2217 close behavior and only with
 
 ## Camera Capture
 
-The camera helpers run on the Linux host:
+The camera is on the workbench. Reach it through the restricted agent user:
 
 ```bash
-tools/workbench-camera-capture
+tools/wb snap > photo.jpg               # exposure defaults to the bench setting
+tools/wb snap exposure=auto > room.jpg
+tools/wb snap-stats                     # deterministic colour of the lit pixels
+tools/workbench-camera-capture          # into artifacts/
 tools/workbench-camera-sequence 4 3
 ```
 
-Override `WORKBENCH_CAMERA_DEVICE` in `config/workbench.env` when a different
-local camera is attached.
+A camera attached to this host is used instead when `WORKBENCH_CAMERA_DEVICE`
+points at it. Setup, exposure notes and RP2 flashing:
+[`workbench-build-from-scratch.md`](workbench-build-from-scratch.md).

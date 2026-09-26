@@ -19,6 +19,18 @@ Exit codes: `0` ok · `2` bad request · `65` the slot is busy · `66` no device
 - **Exit 68:** the image was written but did not boot to a USB tty. It may have crashed early.
   Check `status`; flash the backup to recover.
 
+## Serial output from RP2 boards
+
+Arduino-pico and pico-sdk USB stdio **drop all output while DTR is low**. The portal's
+proxy keeps DTR low, which is correct for ESP32. So every RP2 slot runs
+`wb-rp2-console@SLOTn` on the Pi. It holds the proxy's single RFC2217 client with DTR high, so
+`serial-tail` and `serial-wait` see the board, and `serial-write` goes through it.
+
+- If an RP2 slot shows no serial output at all, the holder is not running. That is a bench-owner
+  problem; report it.
+- Lines printed in the first ~2 s after a reboot can be missed while the proxy reconnects. For
+  anything you must catch, print it repeatedly or periodically.
+
 ## Backup and restore
 
 ```bash
@@ -43,6 +55,9 @@ sha256sum .pio/build/galactic_unicorn/firmware.uf2
 - If `localhost/awtrix-build` is missing, the VM was reset. Rebuild it with
   `podman build -t awtrix-build tools/container`, which takes a few minutes.
 - The `pio-home` volume caches toolchains. It is a cache, not garbage.
+- From the HOST (Claude Code): `incus exec -T hermes-playground -- su -l hermes -c '...'`.
+  The VM user's audited login shell does **not** forward positional arguments (`_ "$x"`), so
+  a `$1` arrives empty. Validate simple values (e.g. `[[ $N =~ ^[0-9]{4}$ ]]`) and inline them.
 - Extra compile flags for a one-off build: add
   `-e PLATFORMIO_BUILD_FLAGS="-DNAME=value"` to `podman run`.
 

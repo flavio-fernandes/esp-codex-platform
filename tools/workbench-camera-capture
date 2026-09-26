@@ -7,7 +7,7 @@ source "${SCRIPT_DIR}/lib/workbench-env"
 load_workbench_env \
   WORKBENCH_CAMERA_DEVICE WORKBENCH_CAMERA_WIDTH WORKBENCH_CAMERA_HEIGHT WORKBENCH_CAMERA_SKIP
 
-DEVICE="${WORKBENCH_CAMERA_DEVICE:-/dev/v4l/by-id/usb-Creative_Technology_Ltd._Live__Cam_Chat_HD_VF0790_2015032504121-video-index0}"
+DEVICE="${WORKBENCH_CAMERA_DEVICE:-/dev/v4l/by-id/usb-<camera-vendor>_<model>_<serial>-video-index0}"
 WIDTH="${WORKBENCH_CAMERA_WIDTH:-1280}"
 HEIGHT="${WORKBENCH_CAMERA_HEIGHT:-720}"
 SKIP="${WORKBENCH_CAMERA_SKIP:-10}"
@@ -20,10 +20,12 @@ Usage:
 
 Environment:
   WORKBENCH_CAMERA_DEVICE  V4L2 camera device path
-                           default /dev/v4l/by-id/usb-Creative_Technology_Ltd._Live__Cam_Chat_HD_VF0790_2015032504121-video-index0
+                           default /dev/v4l/by-id/usb-<camera-vendor>_<model>_<serial>-video-index0
   WORKBENCH_CAMERA_WIDTH   capture width, default 1280
   WORKBENCH_CAMERA_HEIGHT  capture height, default 720
   WORKBENCH_CAMERA_SKIP    frames to skip before capture, default 10
+  WORKBENCH_AGENT_HOST     ssh alias of the bench agent user, used when the camera
+                           device is not local (default workbench-agent)
 
 Default output:
   artifacts/workbench-camera-<timestamp>.jpg
@@ -50,15 +52,27 @@ need() {
 need date
 need dirname
 need mkdir
-need v4l2-ctl
-
-if [[ ! -e "$DEVICE" ]]; then
-  echo "camera device not found: $DEVICE" >&2
-  exit 1
-fi
 
 OUT="${1:-artifacts/workbench-camera-$(date -u +%Y%m%dT%H%M%SZ).jpg}"
 mkdir -p "$(dirname "$OUT")"
+
+# The camera now lives on the workbench itself. With no local device, fetch the
+# photo from the bench through its restricted agent interface (ssh alias
+# WORKBENCH_AGENT_HOST, default workbench-agent). See docs/workbench-build-from-scratch.md.
+if [[ ! -e "$DEVICE" ]]; then
+  need ssh
+  AGENT_HOST="${WORKBENCH_AGENT_HOST:-workbench-agent}"
+  tmp="${OUT}.part"
+  if ssh "$AGENT_HOST" snap "res=${WIDTH}x${HEIGHT}" "skip=${SKIP}" >"$tmp"; then
+    mv "$tmp" "$OUT"
+    printf '%s\n' "$OUT"
+    exit 0
+  fi
+  rm -f "$tmp"
+  echo "no local camera at $DEVICE and remote snap via $AGENT_HOST failed" >&2
+  exit 1
+fi
+need v4l2-ctl
 
 v4l2-ctl \
   --device "$DEVICE" \

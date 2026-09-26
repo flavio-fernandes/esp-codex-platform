@@ -106,7 +106,7 @@ otherwise use the active `/dev/ttyACM*` or `/dev/ttyUSB*` node. Do not assume a
 fixed ACM number.
 
 ```bash
-export MAGTAG_PORT=/dev/serial/by-id/usb-Espressif_ESP32-S2_7c:df:a1:01:25:f2-if00
+export MAGTAG_PORT=/dev/serial/by-id/usb-Espressif_ESP32-S2_<mac>-if00
 ```
 
 Flash the combined factory image at `0x0`. This is the preferred recovery and

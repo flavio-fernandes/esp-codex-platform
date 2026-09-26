@@ -46,7 +46,8 @@ Install these on the Linux host before using the quick start:
   below use the CLI.
 - Git, Bash, and an editor.
 - SSH access from the Linux host or devcontainer to the ESP workbench.
-- Optional: `v4l2-ctl` from `v4l-utils` when using the local camera helpers.
+- Optional: `v4l2-ctl` from `v4l-utils`, only for a camera attached to this host
+  (the bench camera is reached over SSH instead).
 
 This repo uses a Dev Container: a Docker-based development environment defined
 in `.devcontainer/` so ESPHome, esptool, and supporting CLI tools are consistent
@@ -238,17 +239,22 @@ opens can toggle control lines and leave the board in ROM download mode or a
 visually wedged state. Use `tools/espwb-monitor` and let its post-monitor
 recovery run.
 
-`tools/workbench-camera-capture` captures one JPEG from a local V4L2 camera on
-the Linux host, and `tools/workbench-camera-sequence` captures a timed sequence:
+The bench camera, RP2040/RP2350 flashing, and AI-agent access live **on the
+workbench** behind a restricted SSH user (`workbench-agent` alias). See
+[`docs/workbench-build-from-scratch.md`](docs/workbench-build-from-scratch.md)
+for the full rebuild runbook, and [`skills/workbench/`](skills/workbench/SKILL.md)
+for the agent-facing skill (used by Claude Code and Hermes).
 
 ```bash
-tools/workbench-camera-capture
+tools/wb status                          # slots, camera, allowed slots
+tools/wb snap > photo.jpg                # one JPEG from the bench camera
+tools/wb flash-pico SLOT1 < firmware.uf2 # RP2040/RP2350: BOOTSEL, write, verify, run
+tools/workbench-camera-capture           # same camera, into artifacts/
 tools/workbench-camera-sequence 4 3
 ```
 
-By default it uses the current workbench camera's stable `/dev/v4l/by-id/...`
-path. Override `WORKBENCH_CAMERA_DEVICE` in `config/workbench.env` when a
-different local camera is attached.
+The camera helpers use a local V4L2 device when `WORKBENCH_CAMERA_DEVICE`
+exists on this host, and otherwise fetch the photo from the bench.
 
 ## Safety Rules
 
@@ -278,13 +284,19 @@ different local camera is attached.
 - `tools/espwb-monitor` - RFC2217 serial monitor wrapper.
 - `tools/workbench-local-esptool` - reference helper installed on the workbench
   as `/usr/local/bin/espwb-local-esptool`.
-- `tools/workbench-camera-capture` - optional local V4L2 camera snapshot.
-- `tools/workbench-camera-sequence` - optional timed camera snapshots.
+- `tools/workbench-camera-capture` - camera snapshot (local V4L2 or the bench).
+- `tools/workbench-camera-sequence` - timed camera snapshots.
+- `tools/wb` - thin client for the bench's restricted agent interface.
+- `workbench/` - Pi-side helpers and installer: camera, RP2 flashing, agent
+  user, pinned slot config.
+- `skills/workbench/` - agent skill (Claude Code / Hermes) for the bench.
 - `tools/validate-workbench.sh` - local toolchain and workbench validation.
 - `docs/magtag-lvgl-refresh-analysis.md` - root-cause note for MagTag LVGL
   draw-end events and e-paper refresh behavior.
 - `docs/native-usb-recovery.md` - native USB and direct recovery guide.
 - `docs/workbench-cheatsheet.md` - command reference.
+- `docs/workbench-build-from-scratch.md` - rebuild the workbench Pi (portal,
+  camera, RP2 flashing, agent access, pitfalls).
 - `docs/public-release-checklist.md` - public hygiene checks.
 
 ## Starting a Device Project

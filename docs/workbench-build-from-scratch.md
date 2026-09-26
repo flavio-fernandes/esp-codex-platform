@@ -166,6 +166,7 @@ sudo bash ~/esp-codex-platform/workbench/install-agent-extras.sh
 | `/usr/local/bin/wb-agent-shell` | the agent user's only entry point (verb table, audit log) |
 | `/usr/local/bin/wb-camera` | `snap`, `burst`, `stats` (v4l2-ctl, MJPG) |
 | `/usr/local/bin/wb-pico-flash` | RP2040/RP2350 `info`, `save`, `load` |
+| `/usr/local/bin/wb-rp2-console` + `wb-rp2-console@SLOTn.service` | holds DTR on RP2 slots so their serial output is not dropped (§5.1) |
 | `/usr/local/bin/espwb-local-esptool` | reset-aware ESP helper, from `tools/workbench-local-esptool` |
 | `/etc/udev/rules.d/60-rp2-picotool.rules` | vendor `2e8a` → group `plugdev`, so picotool needs no sudo |
 | user `wbagent` | groups dialout, video, plugdev; password locked |
@@ -184,7 +185,33 @@ sudoedit /etc/workbench/agent.env
 #   WB_AGENT_ESP_SLOTS=""       (add a slot only when an ESP board is there)
 ```
 
-### How RP2 flashing works (`wb-pico-flash`)
+### 5.1 RP2 serial needs DTR (`wb-rp2-console`)
+
+The portal's proxy opens every tty with DTR and RTS **low**. That is correct for ESP32 native
+USB, where DTR/RTS mean reset and download mode. But **arduino-pico and pico-sdk USB stdio drop
+all output while DTR is low**. So without help, `/api/serial/output`, `/api/serial/monitor` and
+the web UI show nothing from an RP2 board that is happily printing.
+
+Found the hard way: a freshly flashed board visibly ran on camera, but serial stayed empty
+until an RFC2217 client held DTR high.
+
+Only the proxy's single RFC2217 client may change control lines, and the proxy drops DTR again
+when that client leaves. So `wb-rp2-console@SLOTn`:
+- stays connected as that client with DTR high, and discards what it reads (the portal's
+  recorder gets the same bytes through the proxy's read-only fan-out);
+- reconnects by itself after every flash or portal restart;
+- accepts writes on `127.0.0.1:600n`, because it holds the client slot that
+  `/api/serial/write` would otherwise use. `wb-agent-shell serial-write` routes RP2 slots
+  there.
+
+The installer enables it for each slot in `WB_AGENT_PICO_SLOTS`. **Never enable it on an ESP
+slot**: DTR high holds an ESP32-S3/C3 in reset or download mode.
+
+A human wanting an interactive console on an RP2 slot can stop the holder first
+(`sudo systemctl stop wb-rp2-console@SLOT1`), or read the fan-out port `tcp_port+1000`, which
+is read-only.
+
+### 5.2 How RP2 flashing works (`wb-pico-flash`)
 1. Take a portal lease on the slot: `POST /api/slot/acquire`, mode `flashing`.
 2. Stop the slot's proxy: `POST /api/stop`.
 3. **1200-baud touch** on the tty. This reboots arduino-pico and pico-sdk USB-stdio firmware into
@@ -262,6 +289,13 @@ The verb list is `ssh workbench-agent help`. The agent-facing guide is the skill
 
 ## 8. Verify
 
+Measured on this bench (Pi 3B, v1.0.1, 2026-09-26):
+- a whole-flash `pico-save` of a Pico W (4 MB) took ~52 s;
+- `flash-pico` of a 470 KB UF2 took ~22 s, and of the 4 MB backup ~60 s;
+- the 1200-baud touch entered BOOTSEL on the first try every time;
+- the slot map was identical across two portal restarts.
+
+
 On a client with the aliases:
 
 ```bash
@@ -277,7 +311,7 @@ RP2 round trip with zero firmware risk, when an RP2 board is in SLOT1:
 ```bash
 ssh workbench-agent pico-save SLOT1 > backup.uf2     # whole flash; holds Wi-Fi creds: keep private
 ssh workbench-agent flash-pico SLOT1 < backup.uf2    # write the same image back
-ssh workbench-agent serial-tail SLOT1 20             # it booted
+ssh workbench-agent serial-tail SLOT1 20             # it booted (needs §5.1)
 ```
 
 End-to-end acceptance (build → flash → serial → camera): see the "hello" procedure in
@@ -319,6 +353,9 @@ Keep the snapshot private, since it contains keys and host details.
 | Portal API has no auth | agents use the restricted SSH verbs; keep the bench on a trusted LAN |
 | devcontainer `containerEnv` placeholders override `config/workbench.env` | see `docs/tools-validation-matrix.md` |
 | Two RP2 boards in BOOTSEL at once | `wb-pico-flash` refuses |
+| RP2 serial silently empty: the proxy keeps DTR low, and arduino-pico/pico-sdk drop output | §5.1 `wb-rp2-console` holds DTR on RP2 slots only |
+| Portal says `running` before its monitor port listens, so a `serial-wait` straight after a flash fails | `wb-pico-flash` waits for the monitor port too |
+| Playground audit shell drops `su -c` positional args, so a build flag arrives empty | validate simple values and inline them (skill `rp2.md`) |
 | RP2 backups contain Wi-Fi credentials | never commit; keep private |
 
 More: [`skills/workbench/references/pitfalls.md`](../skills/workbench/references/pitfalls.md),

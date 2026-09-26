@@ -6,11 +6,11 @@ Identified by `esptool flash-id` on 2026-06-21.
 
 | Location | Board | Chip | Flash | Interface | USB identity |
 |---|---|---|---|---|---|
-| MagTag (argon direct USB) | Adafruit MagTag 2.9 | ESP32-S2 rev0.0, 40 MHz | 4 MB | USB-OTG | 239a:80e5 (app) / 303a:0002 (ROM boot) |
+| MagTag (dev host direct USB) | Adafruit MagTag 2.9 | ESP32-S2 rev0.0, 40 MHz | 4 MB | USB-OTG | 239a:80e5 (app) / 303a:0002 (ROM boot) |
 | SLOT1 (workbench Pi) | UM FeatherS3 | ESP32-S3 (QFN56) rev0.1, 40 MHz | 16 MB (Winbond) | USB-Serial/JTAG | 303a:1001 |
 | SLOT2 (workbench Pi) | Witty Cloud | ESP8266EX, 26 MHz | 4 MB | CH340G UART adapter | 1a86:7523 |
 
-> MACs: MagTag `7c:df:a1:01:25:f2` · SLOT1 `70:04:1d:ad:cc:48` · SLOT2 `5c:cf:7f:16:e4:76`
+> MACs: recorded in the private project notes, not here.
 
 ---
 
@@ -118,7 +118,7 @@ ESPWB_SLOT=SLOT2 ESP_PORT="rfc2217://${WORKBENCH_IP}:4002?ign_set_control" \
 ### `workbench-camera-capture` / `workbench-camera-sequence`
 
 Host-side V4L2 only. No slot dependency. Camera confirmed present at
-`/dev/v4l/by-id/usb-Creative_Technology_Ltd._Live__Cam_Chat_HD_VF0790_2015032504121-video-index0`.
+`/dev/v4l/by-id/usb-<camera-vendor>_<model>_<serial>-video-index0`.
 Both tools captured frames successfully.
 
 ```bash
@@ -167,6 +167,6 @@ fallbacks remain for environments with no config file.
 once to pick up the change. Until then, pass the real IP explicitly:
 
 ```bash
-WORKBENCH_IP=192.168.1.235 WORKBENCH_URL="http://192.168.1.235:8080" \
-  ESP_PORT="rfc2217://192.168.1.235:4001?ign_set_control" tools/espwb-status
+WORKBENCH_IP=192.0.2.10 WORKBENCH_URL="http://192.0.2.10:8080" \
+  ESP_PORT="rfc2217://192.0.2.10:4001?ign_set_control" tools/espwb-status
 ```

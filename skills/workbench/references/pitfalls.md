@@ -36,9 +36,13 @@ the upstream Embedded-AI-Harness skills, and the camera/RP2 bring-up on this ben
 13. **RP2 whole-flash backups hold Wi-Fi credentials.** Treat them as secrets.
 14. **Two boards in BOOTSEL at once is ambiguous.** `flash-pico` refuses rather than guess.
 15. **A battery-backed board is not power-cycled by unplugging USB.**
+16. **An RP2 board prints nothing unless DTR is high.** The bench's `wb-rp2-console` holder
+    takes care of it for RP2 slots. An empty `serial-tail` on an RP2 slot usually means the
+    holder is down, not that the firmware is silent. Check a photo before concluding the
+    board is dead.
 
 ## Evidence
-16. **Say only what you observed.** Report exit codes, matched serial lines and stats JSON
+17. **Say only what you observed.** Report exit codes, matched serial lines and stats JSON
     verbatim. The audit log on the Pi is what your report is graded against.
-17. **Camera:** use manual exposure for LEDs, and never sync the camera interval to the
+18. **Camera:** use manual exposure for LEDs, and never sync the camera interval to the
     firmware's cycle. Look at every photo you cite (`camera.md`).

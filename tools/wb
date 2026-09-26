@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Thin client for the workbench's restricted agent interface.
+#   tools/wb status
+#   tools/wb snap > photo.jpg
+#   tools/wb flash-pico SLOT1 < firmware.uf2
+#   tools/wb help
+# The alias comes from ~/.ssh/config (see docs/workbench-build-from-scratch.md, section 7).
+set -Eeuo pipefail
+exec ssh "${WORKBENCH_AGENT_HOST:-workbench-agent}" "$@"

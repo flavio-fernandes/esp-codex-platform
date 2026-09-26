@@ -72,6 +72,9 @@ check_executable tools/espwb-monitor
 check_executable tools/espwb-ssh
 check_executable tools/espwb-status
 check_executable tools/workbench-local-esptool
+check_executable tools/wb
+check_executable workbench/bin/wb-agent-shell
+check_executable workbench/install-agent-extras.sh
 
 if [[ "$STATIC_ONLY" == "1" ]]; then
   printf '[SKIP] Workbench network and board checks skipped because STATIC_ONLY=1.\n'
@@ -125,6 +128,26 @@ if tools/espwb-status >/tmp/espwb-status.txt 2>&1; then
 else
   fail "non-destructive workbench status helper failed"
   sed -n '1,160p' /tmp/espwb-status.txt || true
+fi
+
+# Restricted agent interface on the bench (camera + RP2 flashing). Skipped when no
+# agent alias is configured: RUN_AGENT_CHECK=0 or WORKBENCH_AGENT_HOST unresolvable.
+AGENT_HOST="${WORKBENCH_AGENT_HOST:-workbench-agent}"
+if [[ "${RUN_AGENT_CHECK:-1}" == "1" ]]; then
+  if ssh -o BatchMode=yes -o ConnectTimeout=10 "$AGENT_HOST" status >/tmp/wb-agent-status.txt 2>&1; then
+    pass "workbench agent interface reachable ($AGENT_HOST status)"
+    sed -n '1,20p' /tmp/wb-agent-status.txt
+    if ssh -o BatchMode=yes "$AGENT_HOST" snap 2>/dev/null | head -c 3 | od -An -tx1 | grep -q 'ff d8 ff'; then
+      pass "workbench camera returns a JPEG"
+    else
+      fail "workbench camera snap failed"
+    fi
+  else
+    fail "workbench agent interface not reachable via $AGENT_HOST (set RUN_AGENT_CHECK=0 to skip)"
+    sed -n '1,20p' /tmp/wb-agent-status.txt || true
+  fi
+else
+  printf '[SKIP] agent interface check skipped (RUN_AGENT_CHECK=0).\n'
 fi
 
 if tools/espwb-esptool flash-id >/tmp/espwb-flash-id.txt 2>&1; then
