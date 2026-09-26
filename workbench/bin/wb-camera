@@ -22,12 +22,12 @@ WIDTH="${WB_CAMERA_WIDTH:-1280}"
 HEIGHT="${WB_CAMERA_HEIGHT:-720}"
 SKIP="${WB_CAMERA_SKIP:-10}"
 EXPOSURE="${WB_CAMERA_EXPOSURE:-auto}"
-LOCK_FILE="${WB_CAMERA_LOCK:-/run/lock/wb-camera.lock}"
+LOCK_FILE="${WB_CAMERA_LOCK:-/run/workbench/camera.lock}"
 
 die() { echo "wb-camera: $*" >&2; exit 2; }
 
 usage() {
-  sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+  awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
 }
 
 # key=value options shared by snap and burst
@@ -73,8 +73,13 @@ capture() { # capture COUNT OUTFILE
     --stream-to="$2" 2>&1 >/dev/null)" || { printf '%s\n' "$err" | tr -d '<' >&2; return 1; }
 }
 
+# Shared by pi, root and wbagent. /run/workbench (tmpfiles.d, group plugdev, not sticky)
+# holds the lock; it is opened READ-ONLY so it does not matter which user created it.
+# (A lock in sticky /run/lock broke other users: fs.protected_regular=2 refuses even
+# root an O_CREAT open of a file someone else owns there.)
 with_lock() {
-  exec 8>"$LOCK_FILE"
+  [[ -e "$LOCK_FILE" ]] || (umask 022; : >>"$LOCK_FILE") 2>/dev/null || true
+  exec 8<"$LOCK_FILE" || die "cannot open lock $LOCK_FILE (is /run/workbench missing? systemd-tmpfiles --create)"
   flock -w 30 8 || die "camera busy (lock $LOCK_FILE)"
 }
 

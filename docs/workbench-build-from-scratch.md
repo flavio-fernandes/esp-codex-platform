@@ -168,6 +168,7 @@ sudo bash ~/esp-codex-platform/workbench/install-agent-extras.sh
 | `/usr/local/bin/wb-pico-flash` | RP2040/RP2350 `info`, `save`, `load` |
 | `/usr/local/bin/wb-rp2-console` + `wb-rp2-console@SLOTn.service` | holds DTR on RP2 slots so their serial output is not dropped (§5.1) |
 | `/usr/local/bin/espwb-local-esptool` | reset-aware ESP helper, from `tools/workbench-local-esptool` |
+| `/etc/tmpfiles.d/workbench.conf` → `/run/workbench` | lock dir shared by pi, root and wbagent (group plugdev, not sticky) |
 | `/etc/udev/rules.d/60-rp2-picotool.rules` | vendor `2e8a` → group `plugdev`, so picotool needs no sudo |
 | user `wbagent` | groups dialout, video, plugdev; password locked |
 | `/etc/sudoers.d/wbagent` | NOPASSWD for **only** `espwb-local-esptool`; checked with `visudo -c` |
@@ -353,6 +354,7 @@ Keep the snapshot private, since it contains keys and host details.
 | Portal API has no auth | agents use the restricted SSH verbs; keep the bench on a trusted LAN |
 | devcontainer `containerEnv` placeholders override `config/workbench.env` | see `docs/tools-validation-matrix.md` |
 | Two RP2 boards in BOOTSEL at once | `wb-pico-flash` refuses |
+| A lock file in sticky `/run/lock` created by one user locks out every other, root included (`fs.protected_regular=2`) | locks live in `/run/workbench` and are opened read-only |
 | RP2 serial silently empty: the proxy keeps DTR low, and arduino-pico/pico-sdk drop output | §5.1 `wb-rp2-console` holds DTR on RP2 slots only |
 | Portal says `running` before its monitor port listens, so a `serial-wait` straight after a flash fails | `wb-pico-flash` waits for the monitor port too |
 | Playground audit shell drops `su -c` positional args, so a build flag arrives empty | validate simple values and inline them (skill `rp2.md`) |
