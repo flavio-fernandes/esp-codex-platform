@@ -1,0 +1,49 @@
+{
+  "gpio_boot": 18,
+  "gpio_en": 17,
+  "slots": [
+    {
+      "label": "SLOT1",
+      "usb_prefix": "0:1.2.1",
+      "tcp_port": 4001,
+      "gdb_port": 3333,
+      "openocd_telnet_port": 4444
+    },
+    {
+      "label": "SLOT2",
+      "usb_prefix": "0:1.2.2",
+      "tcp_port": 4002,
+      "gdb_port": 3334,
+      "openocd_telnet_port": 4445
+    },
+    {
+      "label": "SLOT3",
+      "usb_prefix": "0:1.2.3",
+      "tcp_port": 4003,
+      "gdb_port": 3335,
+      "openocd_telnet_port": 4446
+    },
+    {
+      "label": "SLOT4",
+      "usb_prefix": "0:1.3",
+      "tcp_port": 4004,
+      "gdb_port": 3336,
+      "openocd_telnet_port": 4447
+    },
+    {
+      "label": "SLOT6",
+      "usb_prefix": "0:1.5",
+      "tcp_port": 4006,
+      "gdb_port": 3338,
+      "openocd_telnet_port": 4449
+    },
+    {
+      "label": "SLOT7",
+      "usb_prefix": "0:1.2.4",
+      "tcp_port": 4007,
+      "gdb_port": 3339,
+      "openocd_telnet_port": 4450
+    }
+  ],
+  "debug_probes": []
+}

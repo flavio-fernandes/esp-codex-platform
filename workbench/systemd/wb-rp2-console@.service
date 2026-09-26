@@ -1,0 +1,13 @@
+[Unit]
+Description=Hold DTR on RP2 workbench slot %i so its USB serial output reaches the portal
+After=rfc2217-portal.service
+Wants=rfc2217-portal.service
+
+[Service]
+User=wbagent
+ExecStart=/usr/local/bin/wb-rp2-console %i
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

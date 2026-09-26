@@ -1,0 +1,4 @@
+# The restricted agent user may run ONLY the reset-aware ESP flash helper as root.
+# Everything else it does (camera, RP2 flashing, portal API) needs no root.
+wbagent ALL=(root) NOPASSWD: /usr/local/bin/espwb-local-esptool
+Defaults:wbagent !requiretty

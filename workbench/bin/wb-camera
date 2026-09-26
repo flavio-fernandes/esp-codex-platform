@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# Capture evidence photos from the workbench USB (UVC) camera.
+#
+# Runs ON the workbench Pi. Ported from tools/workbench-camera-capture and
+# tools/workbench-camera-sequence, which ran on a separate Linux host back when
+# the camera was plugged in there.
+#
+#   wb-camera snap  OUT.jpg [exposure=auto|N] [res=WxH] [skip=N]
+#   wb-camera burst OUTDIR COUNT [exposure=auto|N] [res=WxH]
+#   wb-camera stats IN.jpg [threshold=N]
+#
+# Settings come from /etc/workbench/agent.env (WB_CAMERA_*). Only v4l2-ctl is
+# needed for capture; `stats` needs python3-pil.
+set -Eeuo pipefail
+
+ENV_FILE="${WB_AGENT_ENV:-/etc/workbench/agent.env}"
+# shellcheck disable=SC1090
+[[ -r "$ENV_FILE" ]] && source "$ENV_FILE"
+
+DEVICE="${WB_CAMERA_DEVICE:-/dev/video0}"
+WIDTH="${WB_CAMERA_WIDTH:-1280}"
+HEIGHT="${WB_CAMERA_HEIGHT:-720}"
+SKIP="${WB_CAMERA_SKIP:-10}"
+EXPOSURE="${WB_CAMERA_EXPOSURE:-auto}"
+LOCK_FILE="${WB_CAMERA_LOCK:-/run/lock/wb-camera.lock}"
+
+die() { echo "wb-camera: $*" >&2; exit 2; }
+
+usage() {
+  sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+# key=value options shared by snap and burst
+parse_opts() {
+  local opt
+  for opt in "$@"; do
+    case "$opt" in
+      exposure=auto) EXPOSURE=auto ;;
+      exposure=[0-9]*) EXPOSURE="${opt#exposure=}" ;;
+      res=[0-9]*x[0-9]*) WIDTH="${opt#res=}"; HEIGHT="${WIDTH#*x}"; WIDTH="${WIDTH%x*}" ;;
+      skip=[0-9]*) SKIP="${opt#skip=}" ;;
+      threshold=[0-9]*) THRESHOLD="${opt#threshold=}" ;;
+      *) die "bad option: $opt" ;;
+    esac
+  done
+  [[ "$EXPOSURE" == auto || "$EXPOSURE" =~ ^[0-9]+$ ]] || die "bad exposure: $EXPOSURE"
+  [[ "$WIDTH" =~ ^[0-9]+$ && "$HEIGHT" =~ ^[0-9]+$ && "$SKIP" =~ ^[0-9]+$ ]] || die "bad res/skip"
+}
+
+# The camera keeps its controls between opens, so always set exposure
+# explicitly: a previous manual value would otherwise leak into an "auto" shot.
+# A lit LED matrix blows out under auto exposure; a short manual exposure
+# (e.g. exposure=40) keeps the pixels legible.
+set_exposure() {
+  if [[ "$EXPOSURE" == auto ]]; then
+    v4l2-ctl -d "$DEVICE" -c auto_exposure=3 >/dev/null
+  else
+    v4l2-ctl -d "$DEVICE" -c auto_exposure=1 >/dev/null
+    v4l2-ctl -d "$DEVICE" -c exposure_time_absolute="$EXPOSURE" >/dev/null
+  fi
+}
+
+capture() { # capture COUNT OUTFILE
+  set_exposure
+  # v4l2-ctl prints a '<' per frame on stderr; keep it only for failures.
+  local err
+  err="$(v4l2-ctl \
+    --device "$DEVICE" \
+    --set-fmt-video="width=${WIDTH},height=${HEIGHT},pixelformat=MJPG" \
+    --stream-mmap \
+    --stream-skip="$SKIP" \
+    --stream-count="$1" \
+    --stream-to="$2" 2>&1 >/dev/null)" || { printf '%s\n' "$err" | tr -d '<' >&2; return 1; }
+}
+
+with_lock() {
+  exec 8>"$LOCK_FILE"
+  flock -w 30 8 || die "camera busy (lock $LOCK_FILE)"
+}
+
+cmd="${1:-}"
+shift || true
+case "$cmd" in
+  snap)
+    out="${1:-}"; [[ -n "$out" ]] || die "usage: snap OUT.jpg [opts]"; shift
+    parse_opts "$@"
+    [[ -e "$DEVICE" ]] || die "camera device not found: $DEVICE"
+    with_lock
+    capture 1 "$out"
+    [[ -s "$out" ]] || die "empty capture"
+    ;;
+  burst)
+    outdir="${1:-}"; count="${2:-}"
+    [[ -n "$outdir" && "$count" =~ ^[0-9]+$ && "$count" -ge 1 && "$count" -le 300 ]] \
+      || die "usage: burst OUTDIR COUNT(1-300) [opts]"
+    shift 2
+    parse_opts "$@"
+    [[ -e "$DEVICE" ]] || die "camera device not found: $DEVICE"
+    mkdir -p "$outdir"
+    with_lock
+    capture "$count" "$outdir/stream.mjpg"
+    # Split the MJPG stream on JPEG SOI/EOI markers. Pure python3, no PIL.
+    python3 - "$outdir/stream.mjpg" "$outdir" <<'PY'
+import sys, pathlib
+data = pathlib.Path(sys.argv[1]).read_bytes()
+out = pathlib.Path(sys.argv[2])
+n = pos = 0
+while True:
+    start = data.find(b"\xff\xd8", pos)
+    if start < 0:
+        break
+    end = data.find(b"\xff\xd9", start + 2)
+    if end < 0:
+        break
+    n += 1
+    (out / f"frame-{n:03d}.jpg").write_bytes(data[start:end + 2])
+    pos = end + 2
+print(n)
+PY
+    rm -f "$outdir/stream.mjpg"
+    ;;
+  stats)
+    in="${1:-}"; [[ -r "$in" ]] || die "usage: stats IN.jpg [threshold=N]"; shift
+    THRESHOLD=128
+    parse_opts "$@"
+    # Colour of the LIT pixels only: the room around the panel would otherwise
+    # dominate the mean. Deterministic, so a text-only agent can grade it.
+    python3 - "$in" "$THRESHOLD" <<'PY'
+import json, sys
+from PIL import Image
+img = Image.open(sys.argv[1]).convert("RGB")
+img.thumbnail((320, 320))
+thr = int(sys.argv[2])
+lit = [p for p in img.getdata() if max(p) >= thr]
+total = img.width * img.height
+res = {"lit_fraction": round(len(lit) / total, 4), "lit_pixels": len(lit)}
+if lit:
+    mean = [round(sum(p[i] for p in lit) / len(lit), 1) for i in range(3)]
+    res["mean_rgb"] = mean
+    res["dominant"] = "RGB"[mean.index(max(mean))]
+    res["purity"] = round(max(mean) / (sum(mean) or 1), 3)
+else:
+    res["dominant"] = "none"
+print(json.dumps(res))
+PY
+    ;;
+  -h|--help|help|"") usage ;;
+  *) die "unknown command: $cmd" ;;
+esac

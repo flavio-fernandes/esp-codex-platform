@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# Flash / back up / inspect an RP2040 or RP2350 board sitting in a workbench slot.
+#
+# Runs ON the workbench Pi, as an unprivileged user in the dialout + plugdev
+# groups (no sudo). The rfc2217 portal has no RP2 support, so this does it:
+#
+#   wb-pico-flash info SLOTn
+#   wb-pico-flash save SLOTn OUT.uf2     # whole flash (app + filesystem)
+#   wb-pico-flash load SLOTn IN.uf2      # write, verify, run
+#
+# Sequence: take a portal slot lease -> stop the slot's serial proxy -> 1200-baud
+# touch (falls back to `picotool reboot -f -u`) -> BOOTSEL -> picotool -> reboot to
+# the application -> wait for the tty -> make sure the proxy runs again.
+#
+# NOTE: `save` includes the filesystem, which can hold Wi-Fi credentials. Treat
+# the backup like a secret.
+set -Eeuo pipefail
+
+API="${WB_PORTAL_API:-http://127.0.0.1:8080}"
+BOOTSEL_WAIT="${WB_PICO_BOOTSEL_WAIT:-15}"
+APP_WAIT="${WB_PICO_APP_WAIT:-30}"
+LEASE_TTL="${WB_PICO_LEASE_TTL:-300}"
+BOOTSEL_IDS='2e8a:0003|2e8a:000f'   # RP2040 / RP2350 USB boot ROM
+
+log() { echo "wb-pico-flash: $*" >&2; }
+die() { log "ERROR: $*"; exit "${2:-1}"; }
+
+for c in curl python3 picotool lsusb flock; do
+  command -v "$c" >/dev/null 2>&1 || die "missing command: $c"
+done
+
+action="${1:-}"; slot="${2:-}"; file="${3:-}"
+[[ "$action" =~ ^(info|save|load)$ ]] || die "usage: wb-pico-flash info|save|load SLOTn [file]" 2
+[[ "$slot" =~ ^SLOT[0-9]+$ ]] || die "bad slot: $slot" 2
+[[ "$action" == info || -n "$file" ]] || die "$action needs a file" 2
+[[ "$action" != load || -s "$file" ]] || die "no such firmware: $file" 2
+
+exec 9>"/run/lock/wb-pico-${slot}.lock"
+flock -n 9 || die "another operation holds $slot" 65
+
+api_post() { curl -fsS --max-time 20 -H 'Content-Type: application/json' -d "$2" "$API$1"; }
+
+# Print "devnode present running vid_pid" for the slot.
+slot_state() {
+  curl -fsS --max-time 5 "$API/api/devices" | python3 -c '
+import json, sys
+slot = sys.argv[1]
+for s in json.load(sys.stdin).get("slots", []):
+    if s.get("label") == slot:
+        vids = [d.get("vid_pid", "") for d in (s.get("usb_devices") or [])]
+        print(s.get("devnode") or "-", int(bool(s.get("present"))),
+              int(bool(s.get("running"))), (vids or ["-"])[0])
+        break
+else:
+    print("MISSING 0 0 -")
+' "$slot"
+}
+
+bootsel_count() { lsusb | grep -cE "ID (${BOOTSEL_IDS})\b" || true; }
+
+LEASE=""
+release_lease() {
+  [[ -n "$LEASE" ]] && api_post /api/slot/release "{\"token\":\"$LEASE\"}" >/dev/null 2>&1 || true
+}
+
+ensure_proxy() {
+  local deadline=$((SECONDS + APP_WAIT)) dev present running vid
+  while ((SECONDS < deadline)); do
+    read -r dev present running vid < <(slot_state) || true
+    if [[ "$present" == 1 && "$running" == 1 ]] && monitor_listening; then
+      log "$slot back: $dev ($vid), proxy running"
+      return 0
+    fi
+    if [[ "$present" == 1 && "$dev" != "-" && -e "$dev" ]]; then
+      api_post /api/start "{\"slot\":\"$slot\",\"devnode\":\"$dev\"}" >/dev/null 2>&1 || true
+    fi
+    sleep 1
+  done
+  log "WARNING: $slot did not come back with a running proxy within ${APP_WAIT}s"
+  return 1
+}
+# The proxy's read-only fan-out (tcp_port + 1000) is what serial-wait reads; the
+# portal can report "running" a moment before it listens.
+monitor_listening() {
+  local port
+  port="$(curl -fsS --max-time 5 "$API/api/devices" | python3 -c '
+import json, sys
+for s in json.load(sys.stdin).get("slots", []):
+    if s.get("label") == sys.argv[1]:
+        print(s.get("monitor_port") or (s.get("tcp_port") or 0) + 1000)
+' "$slot")" || return 1
+  timeout 2 bash -c "</dev/tcp/127.0.0.1/$port" 2>/dev/null
+}
+trap 'release_lease' EXIT
+
+read -r DEV PRESENT RUNNING VID < <(slot_state)
+[[ "$DEV" != MISSING ]] || die "$slot is not a configured slot" 2
+
+lease_json="$(api_post /api/slot/acquire \
+  "{\"slot\":\"$slot\",\"mode\":\"flashing\",\"owner\":\"wb-pico-flash\",\"ttl\":$LEASE_TTL}" 2>&1)" \
+  || die "could not lease $slot: $lease_json" 75
+LEASE="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))' <<<"$lease_json")"
+
+n="$(bootsel_count)"
+if [[ "$n" -gt 1 ]]; then
+  die "$n boards are in BOOTSEL at once; refusing to guess which is $slot" 69
+elif [[ "$n" -eq 1 && "$PRESENT" != 1 ]]; then
+  log "$slot already in BOOTSEL"
+else
+  [[ "$PRESENT" == 1 && "$DEV" != "-" ]] || die "$slot has no device" 66
+  [[ "$VID" == 2e8a:* ]] || die "$slot holds $VID, not a Raspberry Pi RP2 board" 2
+  log "$slot: $DEV ($VID) -> stopping proxy, 1200-baud touch"
+  api_post /api/stop "{\"slot\":\"$slot\"}" >/dev/null || true
+  python3 - "$DEV" <<'PY' || true
+import sys, serial
+s = serial.Serial()
+s.port, s.baudrate = sys.argv[1], 1200
+s.open(); s.dtr = False; s.close()
+PY
+  deadline=$((SECONDS + BOOTSEL_WAIT))
+  while (($(bootsel_count) == 0 && SECONDS < deadline)); do sleep 0.5; done
+  if (($(bootsel_count) == 0)); then
+    log "no BOOTSEL after 1200-baud touch; trying picotool reboot -f -u"
+    picotool reboot -f -u >&2 || true
+    deadline=$((SECONDS + BOOTSEL_WAIT))
+    while (($(bootsel_count) == 0 && SECONDS < deadline)); do sleep 0.5; done
+  fi
+  (($(bootsel_count) == 1)) || { ensure_proxy || true; die "$slot never reached BOOTSEL" 67; }
+fi
+
+# picotool draws progress bars with \r; keep the log readable.
+pt() { picotool "$@" 2>&1 | tr '\r' '\n' | grep -vE '\[[= ]*\] +[0-9]+%$' >&2; return "${PIPESTATUS[0]}"; }
+
+rc=0
+case "$action" in
+  info) pt info -a || rc=$? ; pt reboot || true ;;
+  save) pt save -a "$file" || rc=$? ; pt reboot || true ;;
+  load) pt load -v -x "$file" || rc=$? ;;
+esac
+if ((rc != 0)); then
+  log "picotool $action failed (rc=$rc); board may still be in BOOTSEL"
+  picotool reboot >&2 || true
+fi
+
+if ! ensure_proxy && ((rc == 0)); then rc=68; fi
+exit "$rc"

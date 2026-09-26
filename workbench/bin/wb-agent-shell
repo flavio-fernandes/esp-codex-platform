@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+# Forced-command entry point for the restricted `wbagent` SSH user.
+#
+# authorized_keys line (one per client; the word after the path names the client
+# in the audit log):
+#   restrict,command="/usr/local/bin/wb-agent-shell claude" ssh-ed25519 AAAA... comment
+#
+# There is no shell. The client's command line (SSH_ORIGINAL_COMMAND) is split on
+# whitespace, checked against a small character set, and dispatched to a fixed
+# verb table below. Firmware goes IN on stdin; photos and backups come OUT on
+# stdout; human-readable text goes to stderr. Every call is logged:
+#   journalctl -t wb-agent
+set -Eeuo pipefail
+umask 077
+
+CLIENT="${1:-unknown}"
+ENV_FILE="${WB_AGENT_ENV:-/etc/workbench/agent.env}"
+# shellcheck disable=SC1090
+[[ -r "$ENV_FILE" ]] && source "$ENV_FILE"
+
+API="${WB_PORTAL_API:-http://127.0.0.1:8080}"
+PICO_SLOTS=" ${WB_AGENT_PICO_SLOTS:-SLOT1} "
+ESP_SLOTS=" ${WB_AGENT_ESP_SLOTS:-} "
+MAX_FW_BYTES="${WB_AGENT_MAX_FW_BYTES:-16777216}"
+
+RAW="${SSH_ORIGINAL_COMMAND:-help}"
+FROM="${SSH_CONNECTION%% *}"
+
+audit() { logger -t wb-agent -- "client=$CLIENT from=${FROM:-local} $*"; }
+fail() { echo "wb-agent: $1" >&2; audit "cmd=[$RAW] rc=${2:-2} err=[$1]"; exit "${2:-2}"; }
+
+# Deliberately tiny alphabet: no quotes, no $, no ;|&<>(){}`\*? and no newlines.
+[[ ${#RAW} -le 400 ]] || fail "command too long"
+[[ "$RAW" =~ ^[A-Za-z0-9\ _.:=,/#@+-]*$ ]] || fail "refused: characters outside [A-Za-z0-9 _.:=,/#@+-]"
+read -r -a ARGV <<<"$RAW"   # read -a never globs or expands
+VERB="${ARGV[0]:-help}"
+ARGS=("${ARGV[@]:1}")
+
+WORK="$(mktemp -d /tmp/wb-agent.XXXXXX)"
+trap 'rm -rf "$WORK"' EXIT
+
+need_slot() { # need_slot VALUE ALLOWLIST KIND
+  [[ "$1" =~ ^SLOT[0-9]+$ ]] || fail "bad slot: ${1:-<none>}"
+  [[ "$2" == *" $1 "* ]] || fail "$1 is not enabled for $3 (allowed:${2% })"
+}
+num() { [[ "$1" =~ ^[0-9]+$ ]] || fail "not a number: ${1:-<none>}"; }
+
+read_stdin_payload() { # -> $WORK/payload
+  head -c "$((MAX_FW_BYTES + 1))" >"$WORK/payload"
+  local size
+  size="$(stat -c %s "$WORK/payload")"
+  ((size > 0)) || fail "no firmware on stdin"
+  ((size <= MAX_FW_BYTES)) || fail "firmware larger than $MAX_FW_BYTES bytes"
+  PAYLOAD_SHA="$(sha256sum "$WORK/payload" | cut -c1-16)"
+  PAYLOAD_SIZE="$size"
+}
+
+devices_json() { curl -fsS --max-time 5 "$API/api/devices"; }
+
+usage() {
+  cat >&2 <<'USAGE'
+wb-agent verbs (ssh workbench-agent <verb> ...):
+  status                              slots, camera, tools
+  serial-tail SLOTn [lines]           last lines of the slot's serial buffer (passive)
+  serial-wait SLOTn SECONDS PATTERN   wait for PATTERN (may contain spaces) on serial
+  serial-write SLOTn TEXT             send TEXT + CRLF
+  reset SLOTn                         DTR/RTS reset (ESP slots only)
+  snap [exposure=auto|N] [res=WxH]    one JPEG on stdout
+  snap-stats [exposure=..] [threshold=N]  JSON colour of lit pixels (deterministic)
+  seq COUNT INTERVAL [opts]           tar of COUNT JPEGs on stdout
+  burst COUNT [opts]                  tar of ~COUNT consecutive frames on stdout
+  pico-info SLOTn                     picotool info (board rebooted afterwards)
+  pico-save SLOTn                     whole-flash UF2 backup on stdout (holds secrets!)
+  flash-pico SLOTn < fw.uf2           write, verify, run
+  flash-esp SLOTn flash-id|chip-id
+  flash-esp SLOTn write-flash OFFSET < image.bin
+USAGE
+}
+
+rc=0
+case "$VERB" in
+  help|-h|--help)
+    usage ;;
+
+  status)
+    {
+      python3 - "$(devices_json)" <<'EOF'
+import json, sys
+for s in json.loads(sys.argv[1]).get("slots", []):
+    usb = ",".join("%s(%s)" % (d.get("product", "?"), d.get("vid_pid", "?"))
+                   for d in (s.get("usb_devices") or []))
+    print("%-7s state=%s present=%s running=%s dev=%s usb=%s" % (
+        s.get("label"), s.get("state"), s.get("present"), s.get("running"),
+        s.get("devnode"), usb or "-"))
+EOF
+      cam="${WB_CAMERA_DEVICE:-/dev/video0}"
+      if [[ -e "$cam" ]]; then echo "camera  present"; else echo "camera  MISSING ($cam)"; fi
+      echo "pico-slots:${PICO_SLOTS% } esp-slots:${ESP_SLOTS% }"
+      echo "picotool $(picotool version 2>/dev/null | head -1 || echo missing)"
+    } || rc=$? ;;
+
+  serial-tail)
+    [[ "${ARGS[0]:-}" =~ ^SLOT[0-9]+$ ]] || fail "usage: serial-tail SLOTn [lines]"
+    lines="${ARGS[1]:-50}"; num "$lines"; ((lines <= 1000)) || lines=1000
+    curl -fsS --max-time 10 "$API/api/serial/output?slot=${ARGS[0]}&lines=$lines" \
+      | python3 -c 'import json,sys; [print(e.get("text", "")) for e in json.load(sys.stdin).get("lines", [])]' \
+      || rc=$? ;;
+
+  serial-wait)
+    [[ "${ARGS[0]:-}" =~ ^SLOT[0-9]+$ ]] || fail "usage: serial-wait SLOTn SECONDS PATTERN"
+    num "${ARGS[1]:-}"; ((${ARGS[1]} <= 300)) || fail "timeout max 300"
+    pattern="${ARGS[*]:2}"; [[ -n "$pattern" ]] || fail "missing pattern"
+    body="$(python3 -c 'import json,sys; print(json.dumps({"slot":sys.argv[1],"timeout":int(sys.argv[2]),"pattern":sys.argv[3]}))' "${ARGS[0]}" "${ARGS[1]}" "$pattern")"
+    out="$(curl -fsS --max-time "$((${ARGS[1]} + 15))" -H 'Content-Type: application/json' -d "$body" "$API/api/serial/monitor")" || rc=$?
+    [[ -n "${out:-}" ]] || out='{}'
+    echo "$out"
+    python3 -c 'import json,sys; sys.exit(0 if json.loads(sys.argv[1]).get("matched") else 1)' "$out" || rc=1 ;;
+
+  serial-write)
+    [[ "${ARGS[0]:-}" =~ ^SLOT[0-9]+$ ]] || fail "usage: serial-write SLOTn TEXT"
+    text="${ARGS[*]:1}"
+    if [[ "$PICO_SLOTS" == *" ${ARGS[0]} "* ]]; then
+      # RP2 slots: the wb-rp2-console holder owns the RFC2217 client; write through it.
+      n="${ARGS[0]#SLOT}"
+      printf '%s\n' "$text" | python3 -c 'import socket,sys; s=socket.create_connection(("127.0.0.1",int(sys.argv[1])),5); s.sendall(sys.stdin.buffer.read()); s.shutdown(socket.SHUT_WR); r=s.recv(100).decode(); print(r.strip()); sys.exit(0 if r.startswith("ok") else 1)' "$((6000 + n))" || rc=$?
+    else
+    body="$(python3 -c 'import json,sys; print(json.dumps({"slot":sys.argv[1],"text":sys.argv[2]}))' "${ARGS[0]}" "$text")"
+    curl -fsS --max-time 10 -H 'Content-Type: application/json' -d "$body" "$API/api/serial/write" || rc=$?
+    echo
+    fi ;;
+
+  reset)
+    need_slot "${ARGS[0]:-}" "$ESP_SLOTS" "ESP reset"
+    curl -fsS --max-time 30 -H 'Content-Type: application/json' \
+      -d "{\"slot\":\"${ARGS[0]}\"}" "$API/api/serial/reset" || rc=$?
+    echo ;;
+
+  snap)
+    wb-camera snap "$WORK/snap.jpg" "${ARGS[@]}" >&2 || rc=$?
+    ((rc == 0)) && cat "$WORK/snap.jpg" ;;
+
+  snap-stats)
+    snap_opts=() stat_opts=()
+    for a in "${ARGS[@]}"; do
+      case "$a" in threshold=*) stat_opts+=("$a") ;; *) snap_opts+=("$a") ;; esac
+    done
+    wb-camera snap "$WORK/snap.jpg" "${snap_opts[@]}" >&2 || rc=$?
+    if ((rc == 0)); then
+      STATS="$(wb-camera stats "$WORK/snap.jpg" "${stat_opts[@]}")" || rc=$?
+      echo "$STATS"
+    fi ;;
+
+  seq)
+    count="${ARGS[0]:-}"; interval="${ARGS[1]:-}"; num "$count"; num "$interval"
+    ((count >= 1 && count <= 60 && interval <= 600)) || fail "seq: COUNT 1-60, INTERVAL <= 600"
+    mkdir "$WORK/seq"
+    for ((i = 1; i <= count; i++)); do
+      wb-camera snap "$(printf '%s/seq/frame-%02d.jpg' "$WORK" "$i")" "${ARGS[@]:2}" >&2 || { rc=$?; break; }
+      ((i < count)) && sleep "$interval"
+    done
+    ((rc == 0)) && tar -C "$WORK/seq" -cf - . ;;
+
+  burst)
+    count="${ARGS[0]:-}"; num "$count"
+    wb-camera burst "$WORK/burst" "$count" "${ARGS[@]:1}" >&2 || rc=$?
+    ((rc == 0)) && tar -C "$WORK/burst" -cf - . ;;
+
+  pico-info)
+    need_slot "${ARGS[0]:-}" "$PICO_SLOTS" "RP2"
+    wb-pico-flash info "${ARGS[0]}" || rc=$? ;;
+
+  pico-save)
+    need_slot "${ARGS[0]:-}" "$PICO_SLOTS" "RP2"
+    wb-pico-flash save "${ARGS[0]}" "$WORK/backup.uf2" || rc=$?
+    ((rc == 0)) && cat "$WORK/backup.uf2" ;;
+
+  flash-pico)
+    need_slot "${ARGS[0]:-}" "$PICO_SLOTS" "RP2"
+    read_stdin_payload
+    # UF2 blocks start with the magic "UF2\n".
+    [[ "$(head -c 4 "$WORK/payload" | od -An -tx1 | tr -d ' \n')" == 5546320a ]] || fail "stdin is not a UF2 file"
+    mv "$WORK/payload" "$WORK/fw.uf2"
+    audit "cmd=[$RAW] payload sha256=$PAYLOAD_SHA size=$PAYLOAD_SIZE"
+    wb-pico-flash load "${ARGS[0]}" "$WORK/fw.uf2" || rc=$? ;;
+
+  flash-esp)
+    need_slot "${ARGS[0]:-}" "$ESP_SLOTS" "ESP flashing"
+    sub="${ARGS[1]:-}"
+    case "$sub" in
+      flash-id|chip-id)
+        [[ ${#ARGS[@]} -eq 2 ]] || fail "flash-esp SLOTn $sub takes no more arguments"
+        sudo -n /usr/local/bin/espwb-local-esptool "${ARGS[0]}" "$sub" || rc=$? ;;
+      write-flash)
+        offset="${ARGS[2]:-}"
+        [[ "$offset" =~ ^0x[0-9a-fA-F]+$ && ${#ARGS[@]} -eq 3 ]] \
+          || fail "usage: flash-esp SLOTn write-flash 0xOFFSET < image.bin"
+        read_stdin_payload
+        audit "cmd=[$RAW] payload sha256=$PAYLOAD_SHA size=$PAYLOAD_SIZE"
+        sudo -n /usr/local/bin/espwb-local-esptool "${ARGS[0]}" write-flash "$offset" "$WORK/payload" || rc=$? ;;
+      *) fail "flash-esp: only flash-id, chip-id, write-flash" ;;
+    esac ;;
+
+  *) usage; fail "unknown verb: $VERB" ;;
+esac
+
+audit "cmd=[$RAW] rc=$rc${STATS:+ stats=$STATS}"
+exit "$rc"
