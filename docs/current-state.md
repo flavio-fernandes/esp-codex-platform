@@ -6,7 +6,7 @@ rectangle, circle, and triangle content on the e-paper panel.
 
 ## Repository
 
-- Repo: `/home/ff/src/esp-codex-platform`
+- Repo: `~/src/esp-codex-platform`
 - Do not push to GitHub without explicit approval.
 - Do not flash slots other than `SLOT1`.
 - Do not use RFC2217 reset control for flashing.
@@ -178,7 +178,7 @@ find /dev -maxdepth 1 \( -name 'ttyACM*' -o -name 'ttyUSB*' \) -print
 # Export this as the port discovered above. Prefer /dev/serial/by-id when present;
 # otherwise use the active /dev/ttyACM* or /dev/ttyUSB* node. Do not assume
 # /dev/ttyACM0; the MagTag has appeared as /dev/ttyACM1 during this bring-up.
-export MAGTAG_PORT=/dev/serial/by-id/usb-Espressif_ESP32-S2_7c:df:a1:01:25:f2-if00
+export MAGTAG_PORT=/dev/serial/by-id/usb-Espressif_ESP32-S2_<mac>-if00
 ```
 
 ```bash

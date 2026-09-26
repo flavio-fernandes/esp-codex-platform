@@ -1,0 +1,5 @@
+# Raspberry Pi RP2040/RP2350 boards (vendor 2e8a), both the USB boot ROM
+# (BOOTSEL: 2e8a:0003 RP2040, 2e8a:000f RP2350) and running applications that
+# expose the picotool reset interface. Lets the unprivileged `wbagent` user run
+# picotool without sudo.
+SUBSYSTEM=="usb", ATTRS{idVendor}=="2e8a", MODE="0660", GROUP="plugdev"

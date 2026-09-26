@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""Keep DTR asserted on an RP2 slot so its USB serial output is not thrown away.
+
+Why: the portal's proxy opens every tty with DTR and RTS low, which is right for
+ESP32 native USB (DTR/RTS there mean reset and download mode). But arduino-pico and
+pico-sdk USB stdio DROP all output while DTR is low. With no DTR, the portal's
+serial recorder, /api/serial/output and /api/serial/monitor see nothing from an RP2
+board, even though the board is printing.
+
+Only the proxy's single RFC2217 client may change control lines, and the proxy
+drops DTR when that client disconnects. So this service stays connected as that
+client, with DTR high, and reads and discards whatever arrives. The portal's
+recorder gets the same bytes through the proxy's read-only fan-out port. Because
+this holds the one client slot, writes go through here instead: anything sent to
+127.0.0.1:<6000+n> is written to the board (used by `wb-agent-shell serial-write`).
+
+It reconnects on its own. During a flash the proxy stops and this retries until
+the proxy is back.
+
+  wb-rp2-console SLOT1          (normally run as systemd unit wb-rp2-console@SLOT1)
+"""
+import json
+import socket
+import sys
+import threading
+import time
+import urllib.request
+
+import serial
+
+API = "http://127.0.0.1:8080"
+slot = sys.argv[1] if len(sys.argv) > 1 else ""
+if not slot.startswith("SLOT") or not slot[4:].isdigit():
+    sys.exit("usage: wb-rp2-console SLOTn")
+WRITE_PORT = 6000 + int(slot[4:])
+
+lock = threading.Lock()
+current = {"ser": None}
+
+
+def log(msg):
+    print(f"wb-rp2-console {slot}: {msg}", flush=True)
+
+
+def slot_info():
+    with urllib.request.urlopen(f"{API}/api/devices", timeout=5) as r:
+        for s in json.load(r).get("slots", []):
+            if s.get("label") == slot:
+                return s
+    return None
+
+
+def writer_server():
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1", WRITE_PORT))
+    srv.listen(4)
+    while True:
+        conn, _ = srv.accept()
+        with conn:
+            conn.settimeout(5)
+            data = b""
+            try:
+                while True:
+                    chunk = conn.recv(4096)
+                    if not chunk:
+                        break
+                    data += chunk
+            except OSError:
+                pass
+            with lock:
+                ser = current["ser"]
+                ok = False
+                if ser is not None and data:
+                    try:
+                        ser.write(data)
+                        ok = True
+                    except Exception as exc:  # noqa: BLE001
+                        log(f"write failed: {exc}")
+            try:
+                conn.sendall(b"ok\n" if ok else b"error: not connected\n")
+            except OSError:
+                pass
+
+
+threading.Thread(target=writer_server, daemon=True).start()
+last_state = None
+while True:
+    try:
+        info = slot_info()
+        if not info or not info.get("running") or not info.get("tcp_port"):
+            if last_state != "waiting":
+                log("waiting for the slot's proxy")
+                last_state = "waiting"
+            time.sleep(2)
+            continue
+        ser = serial.serial_for_url(f"rfc2217://127.0.0.1:{info['tcp_port']}",
+                                    do_not_open=True, timeout=1)
+        ser.baudrate = 115200
+        ser.dtr = True     # the whole point
+        ser.rts = False
+        ser.open()
+        with lock:
+            current["ser"] = ser
+        log(f"holding DTR on {info.get('devnode')} via port {info['tcp_port']}")
+        last_state = "holding"
+        while True:
+            ser.read(4096)  # discard; the recorder reads the fan-out copy
+    except Exception as exc:  # noqa: BLE001 - reconnect on anything
+        with lock:
+            old, current["ser"] = current["ser"], None
+        if old is not None:
+            try:
+                old.close()
+            except Exception:  # noqa: BLE001
+                pass
+        if last_state != "retry":
+            log(f"disconnected ({exc.__class__.__name__}: {exc}); retrying")
+            last_state = "retry"
+        time.sleep(2)
