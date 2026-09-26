@@ -28,6 +28,11 @@ install -o root -g root -m 0644 "$HERE/udev/60-rp2-picotool.rules" /etc/udev/rul
 udevadm control --reload-rules
 udevadm trigger --subsystem-match=usb --attr-match=idVendor=2e8a || true
 
+echo "== lock directory /run/workbench"
+install -o root -g root -m 0644 "$HERE/tmpfiles/workbench.conf" /etc/tmpfiles.d/workbench.conf
+systemd-tmpfiles --create /etc/tmpfiles.d/workbench.conf
+rm -f /run/lock/wb-camera.lock /run/lock/wb-pico-SLOT*.lock   # pre-fix locations
+
 echo "== user $AGENT_USER"
 if ! id "$AGENT_USER" >/dev/null 2>&1; then
   useradd --create-home --shell /bin/bash --comment "workbench agent (forced command)" "$AGENT_USER"
