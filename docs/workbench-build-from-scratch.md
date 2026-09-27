@@ -66,8 +66,25 @@ confirm the prefix of a port, plug something in and run
      User pi
    ```
 
+4. **Pi 3 / Pi Zero only: turn off the USB controller's FIQ FSM.** These Pis use the `dwc_otg`
+   USB host controller, and on a Pi 3 the Ethernet adapter hangs off it too. With the default
+   FIQ FSM, every USB detach, BOOTSEL cycle or serial-port close on a slot board can leak one of
+   the controller's host channels, until the external hub and the Ethernet stall (see
+   [USB host-controller wedge](#usb-host-controller-wedge-pi-3)). Append the setting to the
+   single line of `cmdline.txt`, keep a backup, and reboot:
+
+   ```bash
+   sudo cp -n /boot/firmware/cmdline.txt /boot/firmware/cmdline.txt.bak
+   sudo sed -i '1 s/$/ dwc_otg.fiq_fsm_enable=0/' /boot/firmware/cmdline.txt
+   sudo reboot
+   cat /sys/module/dwc_otg/parameters/fiq_fsm_enable    # after the reboot: N
+   ```
+
+   Pi 4 and Pi 5 use an xHCI controller and need nothing here.
+
 Optional hardening for small Pis is in upstream User Manual §2.2: journald size, swap, and
-disabling ModemManager.
+disabling ModemManager. On this bench the journal is **volatile** (lost on reboot), so copy
+`journalctl -k -b` off the Pi before rebooting it to clear a fault.
 
 ---
 
@@ -318,6 +335,49 @@ ssh workbench-agent serial-tail SLOT1 20             # it booted (needs §5.1)
 End-to-end acceptance (build → flash → serial → camera): see the "hello" procedure in
 [`skills/workbench/references/rp2.md`](../skills/workbench/references/rp2.md).
 
+USB controller health (Pi 3 / Zero), also checked by `tools/validate-workbench.sh`:
+
+```bash
+ssh workbench 'cat /sys/module/dwc_otg/parameters/fiq_fsm_enable'        # N (§2 step 4)
+ssh workbench 'journalctl -k -b | grep -c "FSM NP"'                       # 0, or a handful
+ssh workbench 'journalctl -k -b | grep -c "hub_ext_port_status failed"'  # must be 0
+```
+
+Measured on this bench (2026-09-26), 20 `pico-info` BOOTSEL cycles of a Pico W in SLOT1: with the
+default FIQ FSM, 285 `dwc_otg ... FSM NP` warnings (249 of them in one burst when the portal first
+closed the board's serial port); with `dwc_otg.fiq_fsm_enable=0`, none. Earlier the same day,
+after about ten flash and BOOTSEL cycles on the default setting, the controller wedged (below).
+
+---
+
+## USB host-controller wedge (Pi 3)
+
+What it looks like from a client:
+
+- `ping` answers, but each reply arrives one interval late: at `-i 1` the RTT is ~1000 ms, at
+  `-i 0.5` ~500 ms, at `-i 0.05` ~50 ms. The Pi only processes a received packet when the next one
+  arrives. On a Pi 3 the Ethernet is a USB device on the same controller.
+- `ssh` fails with `Connection timed out during banner exchange`.
+- The Pi itself is fine (load, temperature, `vcgencmd get_throttled` = `0x0`).
+
+On the Pi, the kernel log shows a growing number of
+`WARN::dwc_otg_hcd_urb_dequeue:639: Timed out waiting for FSM NP transfer to complete on N`
+(N = 0-7, the controller's host channels), then `usb 1-1.2.1: USB disconnect`,
+`hub 1-1.2:1.0: hub_ext_port_status failed (err = -110)` and `connect-debounce failed`. The slot
+board disappears from `lsusb -t`, although it keeps running.
+
+**Getting in without a power cycle:** keep packets flowing, and SSH works again:
+
+```bash
+ping -i 0.02 -q -w 90 <bench-ip> >/dev/null &
+ssh workbench 'journalctl -k -b --no-pager' > wedge-kernel.log    # save the evidence first
+ssh workbench 'sudo systemctl reboot'
+```
+
+A reboot clears it; USB and Ethernet come back with the slots. Prevention is §2 step 4. Also keep
+BOOTSEL cycles (flash, `pico-save`, `pico-info`) per Pi boot to what you need, and change a
+networked board's settings over its own API rather than by reflashing.
+
 ---
 
 ## 9. Snapshot and rollback
@@ -351,6 +411,7 @@ Keep the snapshot private, since it contains keys and host details.
 | Board kept old firmware and "passed" | unique marker on display and serial |
 | Agent claims a visual result it never saw | `snap-stats` deterministic check; the audit log |
 | uhubctl power-cycling kills the bench's own Ethernet (Pi 3) | not automated; human only |
+| Pi 3 `dwc_otg` FIQ FSM leaks host channels on every USB detach/BOOTSEL/tty close until the hub and the USB Ethernet stall (ping RTT = ping interval, SSH banner timeouts) | §2 step 4 `dwc_otg.fiq_fsm_enable=0`; [USB host-controller wedge](#usb-host-controller-wedge-pi-3); `validate-workbench.sh` checks it |
 | Portal API has no auth | agents use the restricted SSH verbs; keep the bench on a trusted LAN |
 | devcontainer `containerEnv` placeholders override `config/workbench.env` | see `docs/tools-validation-matrix.md` |
 | Two RP2 boards in BOOTSEL at once | `wb-pico-flash` refuses |
