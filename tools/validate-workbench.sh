@@ -122,6 +122,24 @@ else
   cat /tmp/workbench-helper-check.txt || true
 fi
 
+# Pi 3 / Zero USB host controller (dwc_otg): with the default FIQ FSM, every USB detach, BOOTSEL
+# cycle or tty close leaks host channels until the hub and the USB Ethernet stall (see
+# docs/workbench-build-from-scratch.md, "USB host-controller wedge"). Pi 4/5 use xHCI: not applicable.
+if usb_state="$(tools/espwb-ssh 'if [ -r /sys/module/dwc_otg/parameters/fiq_fsm_enable ]; then
+    printf "fsm=%s " "$(cat /sys/module/dwc_otg/parameters/fiq_fsm_enable)"
+    printf "fsm_np=%s " "$(journalctl -k -b --no-pager 2>/dev/null | grep -c "FSM NP")"
+    printf "hub_fail=%s" "$(journalctl -k -b --no-pager 2>/dev/null | grep -c "hub_ext_port_status failed")"
+  else printf "no-dwc_otg"; fi' 2>/dev/null)"; then
+  case "$usb_state" in
+    no-dwc_otg) printf '[INFO] no dwc_otg USB controller (xHCI Pi); FIQ check not applicable\n' ;;
+    fsm=N*hub_fail=0) pass "dwc_otg FIQ FSM disabled, no hub failures this boot ($usb_state)" ;;
+    fsm=N*) fail "dwc_otg hub failures this boot, reboot the Pi ($usb_state)" ;;
+    *) fail "dwc_otg FIQ FSM enabled: add dwc_otg.fiq_fsm_enable=0 to /boot/firmware/cmdline.txt ($usb_state)" ;;
+  esac
+else
+  fail "could not read the workbench USB controller state over SSH"
+fi
+
 if tools/espwb-status >/tmp/espwb-status.txt 2>&1; then
   pass "non-destructive workbench status helper ran"
   sed -n '1,120p' /tmp/espwb-status.txt

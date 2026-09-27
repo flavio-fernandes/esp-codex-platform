@@ -21,6 +21,17 @@ the upstream Embedded-AI-Harness skills, and the camera/RP2 bring-up on this ben
    shares the hub, so the bench takes itself offline.
 7. **If the bench drops off the network** (ARP incomplete), a reboot fixes it. Capture
    `uptime`, `vcgencmd get_throttled` and `journalctl --list-boots` first.
+7a. **If the bench answers ping slowly and SSH times out in "banner exchange"**, the Pi 3's USB
+   host controller (`dwc_otg`) is wedged, and the Ethernet, which hangs off it, only delivers a
+   packet when the next one arrives: ping RTT equals the ping interval. Confirm with
+   `ping -i 0.5` (~500 ms) vs `ping -i 0.05` (~50 ms). To get in, keep packets flowing:
+   `ping -i 0.02 -q -w 90 <bench-ip> &`, then ssh. The kernel log shows many
+   `dwc_otg ... Timed out waiting for FSM NP transfer` warnings and
+   `hub_ext_port_status failed (err = -110)`, and the slot board is gone from `lsusb -t`. Save
+   `journalctl -k -b` first (the journal does not survive a reboot), then **ask the human** before
+   rebooting the Pi. Prevention: `dwc_otg.fiq_fsm_enable=0` on the kernel command line
+   (`docs/workbench-build-from-scratch.md` §2); `tools/validate-workbench.sh` checks it. If it is
+   missing, tell the human rather than editing `cmdline.txt` yourself.
 
 ## Flashing
 8. **Flash only what you just built, and record the sha256.** Old images linger in build dirs.
@@ -30,6 +41,10 @@ the upstream Embedded-AI-Harness skills, and the camera/RP2 bring-up on this ben
     See `esp.md`.
 11. **The native-USB ESP32-S3 is fragile.** A plain open or close of its tty, or of an RFC2217
     monitor, can wedge it in ROM. Recovery is `flash-esp SLOTn flash-id`.
+11a. **Every RP2 BOOTSEL cycle is a USB detach and re-attach**, and after each one the portal
+    restarts the slot's serial proxy several times (more tty closes). On a Pi 3 these are what wear
+    the USB controller down (7a). Budget them: back up once, don't `pico-info` in loops, and when
+    the board is on the LAN change its settings over its own HTTP API instead of reflashing.
 12. **RP2: a crashed image with no USB interface can't be reached by software.** The 1200-baud
     touch and `picotool reboot` both need the firmware's USB stack. The last resort is the
     physical BOOTSEL button, which needs a human.

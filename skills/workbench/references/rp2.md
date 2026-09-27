@@ -28,8 +28,10 @@ proxy keeps DTR low, which is correct for ESP32. So every RP2 slot runs
 
 - If an RP2 slot shows no serial output at all, the holder is not running. That is a bench-owner
   problem; report it.
-- Lines printed in the first ~2 s after a reboot can be missed while the proxy reconnects. For
-  anything you must catch, print it repeatedly or periodically.
+- Lines printed in the first ~2 s after a reboot can be missed while the proxy reconnects, and
+  after a `flash-pico` or `pico-info` the gap is longer (measured up to ~15 s on a Pi 3), because
+  the slot lease and the proxy restarts come first. For anything you must catch, print it
+  repeatedly or periodically, or read it from the board's own log API once it is on the network.
 
 ## Backup and restore
 
