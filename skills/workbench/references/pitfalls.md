@@ -32,6 +32,14 @@ the upstream Embedded-AI-Harness skills, and the camera/RP2 bring-up on this ben
    rebooting the Pi. Prevention: `dwc_otg.fiq_fsm_enable=0` on the kernel command line
    (`docs/workbench-build-from-scratch.md` §2); `tools/validate-workbench.sh` checks it. If it is
    missing, tell the human rather than editing `cmdline.txt` yourself.
+7b. **If one slot's board stops enumerating (`error -71` on every attempt) while the others work**,
+   suspect the bench before the board or the cable. Seen 2026-10-06 on a Pi 3 with the FIQ fix in
+   place: one hub port answered every enumeration with `device descriptor read/64, error -71` and
+   `device not accepting address`, for the application and for the RP2350 boot ROM (BOOTSEL held),
+   while the neighbouring port worked and every check in 7a was clean (no FSM NP, no
+   `hub_ext_port_status` errors, `get_throttled` = `0x0`). A replug did not help; rebooting the Pi
+   did. The board keeps running meanwhile, so it stays reachable over Wi-Fi. Save `journalctl -k -b`,
+   tell anyone else sharing the bench, and **ask the human** to reboot the Pi.
 
 ## Flashing
 8. **Flash only what you just built, and record the sha256.** Old images linger in build dirs.
