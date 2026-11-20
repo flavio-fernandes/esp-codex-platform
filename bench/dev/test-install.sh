@@ -4,7 +4,7 @@ set -euo pipefail
 cd /w
 export BENCH_NO_SYSTEMD=1
 bash bench/install.sh
-printf '# preserved config\n' >> /etc/bench/bench.env
+printf '\n# preserved config\n' >> /etc/bench/bench.env
 printf '# preserved keys\n' > /home/wbagent/.ssh/authorized_keys
 before="$(sha256sum /etc/bench/bench.env /home/wbagent/.ssh/authorized_keys)"
 bash bench/install.sh

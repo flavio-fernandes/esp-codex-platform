@@ -14,4 +14,4 @@ if [[ ${1:-} != --check ]]; then
     python3 -m venv --system-site-packages /opt/bench/venv
     /opt/bench/venv/bin/pip install 'esptool>=5,<6'
 fi
-exec python3 "$here/dev/bench_install.py" "$@"
+exec python3 -I -B "$here/dev/bench_install.py" "$@"
