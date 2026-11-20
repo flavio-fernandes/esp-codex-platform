@@ -163,3 +163,25 @@ def test_entry_point_refuses_other_verbs():
     result = subprocess.run([sys.executable, str(script), "unbind", "1-1.1"], capture_output=True,
                             text=True, timeout=30, check=False)
     assert result.returncode == 2 and "usage" in result.stderr
+
+
+def test_guard_lets_rp2_bootsel_storage_through_usb_reset(hub, capsys):
+    hub.usb(path="1-1.1", vid="2e8a", pid="0003", storage=True)  # RP2040 boot ROM: class 08
+    assert usbguard.main(["usb-reset", "SLOT1"]) == 0
+    assert "kind=rp2-bootsel" in capsys.readouterr().out
+    assert history.tail(1)[0]["rc"] == 0
+
+
+def test_guard_lets_rp2350_bootsel_storage_through_power_cycle(hub):
+    hub.usb(path="1-1.4", vid="2e8a", pid="000f", storage=True)  # RP2350 boot ROM
+    assert usbguard.main(["power-cycle"]) == 0
+    assert hub.uhubctl_calls() == ["-l 1-1 -a cycle -d 3"]
+
+
+@pytest.mark.parametrize("vid,pid", [("0781", "5567"), ("2e8a", "000a"), ("2e8a", "1000")])
+def test_guard_other_storage_still_refused_beside_bootsel(hub, capsys, vid, pid):
+    hub.usb(path="1-1.4", vid="2e8a", pid="0003", storage=True)
+    hub.usb(path="1-1.4.1", vid=vid, pid=pid, storage=True)  # a real disk (or non-BOOTSEL storage)
+    assert usbguard.main(["power-cycle"]) == 2
+    assert "mass-storage" in capsys.readouterr().err
+    assert hub.untouched() and history.tail(1) == []

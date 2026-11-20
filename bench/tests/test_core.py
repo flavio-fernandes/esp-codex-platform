@@ -220,3 +220,13 @@ def test_path_guards(bad):
         locks.slot_lock(bad)
     with pytest.raises(ValueError):
         usbdev.resolve(bad)
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_storage_subtree_exempts_rp2_bootsel(usb, nested):
+    usb(path="1-1.1", vid="2e8a", pid="0003", storage=True, nested=nested)
+    usb(path="1-1.2", vid="2e8a", pid="000f", storage=True, nested=nested)
+    assert not usbdev.subtree_has_mass_storage("1-1.1")
+    assert not usbdev.subtree_has_mass_storage("1-1")
+    usb(path="1-1.2.1", vid="0781", pid="5567", storage=True, nested=nested)
+    assert usbdev.subtree_has_mass_storage("1-1")
+    assert not usbdev.subtree_has_mass_storage("1-1.1")

@@ -24,7 +24,8 @@ with a line number; filesystem errors propagate. `monitor` defaults to `auto`,
 - `usbdev.resolve(path, sysfs_root=None)` → device dict or `None`.
 - `usbdev.split_port(path)` → `(parent, portnum)`; portnum is int.
 - `usbdev.is_root_hub(name)` → bool.
-- `usbdev.subtree_has_mass_storage(path, sysfs_root=None)` → bool.
+- `usbdev.subtree_has_mass_storage(path, sysfs_root=None)` → bool; an RP2 BOOTSEL
+  device's (`2e8a:0003`/`000f`) storage interface does not count.
 - `usbdev.find_bootsel_at(path, sysfs_root=None)` → device dict or `None`.
 
 `None` for the root means `BENCH_SYSFS`, default `/sys`; an explicit root wins.

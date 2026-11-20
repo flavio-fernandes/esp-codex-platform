@@ -73,16 +73,29 @@ def is_root_hub(name):
     return re.fullmatch(r"usb[0-9]+", name) is not None
 
 
+def _storage_owner_counts(devices, interface_name):
+    """A class-08 interface counts unless its device is an RP2 boot ROM (BOOTSEL)."""
+    owner = devices / interface_name.split(":", 1)[0]
+    vid, pid = _read(owner / "idVendor"), _read(owner / "idProduct")
+    return vid is None or pid is None or kind(vid, pid) != "rp2-bootsel"
+
+
 def subtree_has_mass_storage(path, sysfs_root=None):
+    """True if a real mass-storage interface sits at path or below it.
+
+    RP2040/RP2350 BOOTSEL (2e8a:0003/000f) exposes a class-08 interface; it is no disk, so it
+    is exempt. Every other class-08 interface counts, including one whose device is unreadable.
+    """
     config.validate_port(path)
     devices = _devices(sysfs_root)
     # Match boundaries, so 1-1.1 never includes its sibling 1-1.10.
     for device in devices.iterdir():
         name = device.name.split(":", 1)[0]
         if name == path or name.startswith(path + "."):
-            if _read(device / "bInterfaceClass") == "08":
+            if _read(device / "bInterfaceClass") == "08" and _storage_owner_counts(devices, device.name):
                 return True
-            if any(_read(p) == "08" for p in device.rglob("bInterfaceClass")):
+            if any(_read(p) == "08" and _storage_owner_counts(devices, p.parent.name)
+                   for p in device.rglob("bInterfaceClass")):
                 return True
     return False
 

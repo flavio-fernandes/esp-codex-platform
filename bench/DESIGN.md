@@ -223,6 +223,8 @@ Details fixed by the implementation (`benchlib.espflash`):
   - the target must be a configured slot's port path, or the configured hub location;
   - the parent must not be a root hub (`usbN`);
   - no mass-storage device (`bInterfaceClass 08`) may sit anywhere in the affected subtree.
+    Exception: the storage interface of an RP2 in BOOTSEL (`2e8a:0003`/`2e8a:000f`) is not a
+    disk and does not count. Every other class-08 device still refuses.
 
 Details fixed by the implementation (`benchlib.usbguard`, `bench/sbin/bench-usb`):
 - argv is exactly `usb-reset SLOTn` or `power-cycle`; anything else is refused with 2.
