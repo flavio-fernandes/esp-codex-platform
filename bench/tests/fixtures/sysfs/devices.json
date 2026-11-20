@@ -1,0 +1,12 @@
+[
+  ["2e8a", "0003", "rp2-bootsel"],
+  ["2e8a", "000f", "rp2-bootsel"],
+  ["2e8a", "000a", "rp2"],
+  ["10c4", "ea60", "esp-uart"],
+  ["1a86", "7523", "esp-uart"],
+  ["1a86", "55d4", "esp-uart"],
+  ["0403", "6001", "esp-uart"],
+  ["0403", "6015", "esp-uart"],
+  ["303a", "1001", "esp-usb"],
+  ["ffff", "ffff", "unknown"]
+]
