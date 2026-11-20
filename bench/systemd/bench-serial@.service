@@ -1,0 +1,18 @@
+[Unit]
+Description=Bench serial owner for %i
+After=systemd-tmpfiles-setup.service
+
+[Service]
+User=bench
+Group=bench
+SupplementaryGroups=dialout plugdev
+ExecStart=/usr/local/bin/bench-serial %i
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/run/bench /var/lib/bench
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

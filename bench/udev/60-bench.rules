@@ -1,0 +1,9 @@
+# Example bench hubs: Genesys 05e3:0610 (USB2), 05e3:0626 (USB3).
+# udev cannot expand bench.env. Add other hub VID:PIDs here when commissioning.
+ACTION=="add|change", SUBSYSTEM=="usb", ATTR{idVendor}=="2e8a", GROUP="plugdev", MODE="0660"
+ACTION=="add|change", SUBSYSTEM=="usb", ATTR{idVendor}=="05e3", ATTR{idProduct}=="0610", TEST=="power/control", ATTR{power/control}="on"
+ACTION=="add|change", SUBSYSTEM=="usb", ATTR{idVendor}=="05e3", ATTR{idProduct}=="0626", TEST=="power/control", ATTR{power/control}="on"
+# All descendants of these hubs, not only direct children.
+ACTION=="add|change", SUBSYSTEM=="usb", ATTRS{idVendor}=="05e3", ATTRS{idProduct}=="0610", TEST=="power/control", ATTR{power/control}="on"
+ACTION=="add|change", SUBSYSTEM=="usb", ATTRS{idVendor}=="05e3", ATTRS{idProduct}=="0626", TEST=="power/control", ATTR{power/control}="on"
+# install.sh also generates 61-bench-paths.rules from BENCH_HUB_PATHS.

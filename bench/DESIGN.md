@@ -366,7 +366,22 @@ Details fixed by the implementation (`benchlib.agentshell`):
   - `power/control=on` for the bench hub (05e3:0610/0626) and any device on a slot port.
 - Never touches: hostname, wlan0/NetworkManager, docker, ufw, sshd except one drop-in
   (`Match User wbagent`: no forwarding, no PTY), or authorized_keys.
-- `--check` changes nothing and reports drift as a list.
+- Installed Python entry points use `#!/opt/bench/venv/bin/python -I`; the root-owned
+  venv has `bench.pth` pointing at `/opt/bench/lib`. Isolated mode ignores caller Python
+  environment variables, including for the sudo helper. esptool is constrained to `>=5,<6`.
+- The installer also needs sudo, openssh-server, udev and systemd for its validators and
+  integration files. It preserves all existing example-derived configuration, including
+  bench.env, and authorized_keys contents (creating an empty file only when missing).
+- `61-bench-paths.rules` is generated from validated BENCH_HUB_PATHS; KERNELS matches
+  descendants at any depth. Rerun the installer after changing hub paths or slot labels.
+  Extra configured labels beyond SLOT1–SLOT9 receive generated tmpfiles lock entries.
+- `BENCH_NO_SYSTEMD=1` is for disposable install tests only: tmpfiles and SSH/sudo syntax
+  validation still run, but daemon/udev reloads, unit activation and unit drift checks do not.
+- `--check` changes nothing and reports drift as a list, returning 1 on drift and 0 with
+  `NO DRIFT`. Run as root to inspect password locking. Operator config contents are not
+  compared against examples, but are parsed and used to check generated files/units.
+- W7 container verification cannot prove real boot, tty permissions or daemon operation;
+  those remain the real-host commissioning gate.
 
 ## Tests
 
