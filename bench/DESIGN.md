@@ -202,6 +202,33 @@ reports:
 
 Exit codes: 0 ok, 1 degraded (it says what), 2 cannot run.
 
+Health JSON uses `slots` and active `holds` objects keyed by slot label; `locks_busy`
+is a list of busy slot labels, plus `camera` when the camera lock is held. Kernel keys
+are the literal strings `error -71`, `error -110`, `USB disconnect`, `over-current`.
+`throttled` is a hexadecimal string (or null if unavailable). Missing optional probes
+produce null and a `notes` entry, not a crash; missing serial state reports open/paused
+false with a note. Invalid configuration, unreadable lock/hold/history state, or failed
+publication is exit 2, never a trustworthy idle verdict.
+
+`BENCH_HUB_PATHS` in bench.env is a space-separated list of USB port paths; every path
+must exist. An empty list means hub missing. `BENCH_CAMERA_DEVICE` must exist.
+`ok` is false for nonzero throttled flags, temperature >=80 C, disk free <10%, a missing
+hub/camera, or a present board permitted by monitor/kind policy whose service is not
+active or whose serial state is not open (including paused). `problems` lists the reasons.
+Growth in either kernel error counter also degrades health: compare with
+`/run/bench/health.prev.json`, then advance that baseline after publishing. First run
+establishes a baseline; unchanged/decreased counts do not degrade. Unavailable kernel
+logs leave the previous baseline intact. Disconnect/over-current counts are diagnostic.
+
+The command atomically replaces health.json and health.prev.json individually. `collect()`
+only reads the baseline; the CLI advances it. `--quiet` suppresses output only when OK
+(including with --json). Degraded results log each problem via `logger -t bench-health`.
+Command probes time out after 3 seconds; serial state uses its 5-second client timeout.
+The oneshot service runs as bench with journal read access; exit 1 is a successful
+collection of a degraded result, while exit 2 is a service failure. The timer starts
+2 minutes after boot and repeats every 5 minutes. This snapshot is an advisory idle
+signal, not a replacement for taking operation locks.
+
 ## `bench-agent-shell CLIENT` (forced command for `wbagent`)
 
 - Same input rules as the old `wb-agent-shell`:
