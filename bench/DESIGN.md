@@ -158,6 +158,24 @@ SLOT6     1-1.3
 | 70 | wrong kind |
 | 71 | application did not come back |
 
+Details fixed by the implementation (`benchlib.rp2flash`):
+- Usage (2) is checked before the lock and writes no history: `info` takes no file, `save`/`load`
+  need one, the slot must be in `slots.conf`, and a `load` file must be readable, non-empty and
+  start with the UF2 magic `UF2\n`. Every later outcome, success or failure, appends history with
+  `verb` `rp2-info|rp2-save|rp2-load`, the slot's kind and USB serial as found before the
+  operation, and sha256/size of the loaded file.
+- The client is `BENCH_CLIENT` (set by `bench-agent-shell`), else the login name. The pause is
+  taken as `bench-flash-rp2 <client>`. A pause refused because another client holds it is busy
+  (65). If `bench-serial` is not running for the slot, nothing owns the tty: the operation runs
+  without a pause and says so.
+- `info` output is data on stdout; `save`/`load` picotool output goes to stderr, without progress
+  bars. The result line `first-line: <text>` (or `first-line: (no output yet)`) is on stdout.
+- After `info`, `save`, or a failed picotool call, a board still in BOOTSEL at the path gets
+  `picotool reboot --bus B --address A` (as `wb-pico-flash` did). 68 wins over 71.
+- Timeouts in seconds, overridable from the environment: `BENCH_RP2_BOOTSEL_WAIT` (10, each
+  poll), `BENCH_RP2_APP_WAIT` (30), `BENCH_RP2_OPEN_WAIT` (15), `BENCH_RP2_LINE_WAIT` (5, first
+  line after the reopen), `BENCH_RP2_PICOTOOL_TIMEOUT` (300), `BENCH_RP2_REBOOT_TIMEOUT` (20).
+
 **`bench-flash-esp SLOTn chip-id|flash-id|read-flash OUT [SIZE]|write-flash 0xOFF FILE`**
 - Uses `/opt/bench/venv/bin/esptool` (esptool ≥5) on the slot's tty, with the slot paused.
 - Identity runs first on every write.
