@@ -319,7 +319,7 @@ signal, not a replacement for taking operation locks.
 - Every call is logged with `logger -t bench-agent "client=.. from=.. cmd=[..] rc=.."`, plus the
   payload sha256 for writes.
 - Verbs:
-  - status: `status`, `health`, `history [N]`
+  - status: `status`, `health [--json]`, `history [N]`
   - serial: `serial-tail SLOTn [lines]`, `serial-wait SLOTn SECONDS PATTERN`,
     `serial-follow SLOTn SECONDS`, `serial-write SLOTn TEXT`, `reset SLOTn`
   - camera: `snap [exposure=auto|N] [res=WxH]`, `snap-stats [..] [threshold=N]`,
@@ -330,7 +330,32 @@ signal, not a replacement for taking operation locks.
   - holds: `hold SLOTn MINUTES REASON`, `release SLOTn`
   - `help`
 - Kind checks replace the old slot allow-lists: `flash-pico` needs `rp2` or `rp2-bootsel`;
-  `flash-esp`/`esp-save`/`reset` need `esp-*`.
+  `flash-esp`/`esp-save` need `esp-*`; `reset` needs `esp-uart`.
+
+Details fixed by the implementation (`benchlib.agentshell`):
+- argv is exactly `CLIENT` (`[A-Za-z0-9_.@-]{1,64}`); anything else refuses every call. An empty
+  command means `help`. Refusals (input rules, usage, ranges, unconfigured slots) exit 2 and run
+  nothing. Ranges: `history` 1–200 (default 20), `serial-tail` 0–1000 lines (50), `serial-wait`
+  0–300 s, `serial-follow` 1–600 s, `seq` COUNT 1–60 and INTERVAL 0–600 s, `burst` 1–300, `hold`
+  1–720 min. The shell's own codes: 1 failed (e.g. bench-serial not running), 65 busy, 66 absent,
+  69 held, 70 wrong kind; a tool's exit code is passed through unchanged.
+- Tools are run by name from `PATH` with `BENCH_CLIENT=<client>`, stdin closed. Verbs whose data
+  is the tool's stdout (`pico-info`, `flash-esp chip-id|flash-id`, `health`, `usb-reset`,
+  `power-cycle`) pass it through. For `pico-save`, `esp-save`, `flash-pico`, `flash-esp
+  write-flash` and every camera call the tool's stdout goes to stderr; on success the file is
+  copied to stdout (byte-identical) or packed as `tar -C DIR -cf - .`. Work files live in a
+  private `mkdtemp` directory, removed at exit.
+- `usb-reset`/`power-cycle` run `sudo -n /usr/local/sbin/bench-usb ...` with `BENCH_CLIENT` set;
+  the sudoers rule (W7) must `env_keep` `BENCH_CLIENT`, or bench-usb sees only `SUDO_USER`.
+- Stdin payloads are read up to `BENCH_MAX_FW_BYTES` (bench.env, default 16 MiB); empty or larger
+  is refused before the tool runs. `flash-pico` also needs the `UF2\n` magic.
+- The shell's own mutations: `serial-write` checks the hold (69); `reset` takes the slot lock
+  (65), checks the hold and records history verb `reset`; `hold`/`release` use `benchlib.holds`.
+- Audit: exactly one `logger -t bench-agent -- LINE` per call, at the end:
+  `client=C from=IP cmd=[RAW] rc=N[ payload sha256=<64 hex> size=N][ stats=<json>][ err=[MSG]]`.
+  `from` is the first word of `SSH_CONNECTION` (`local` without it). RAW is cut at 420 characters
+  and every character outside printable ASCII becomes `?`, so no input can split a log line.
+  SIGTERM/SIGHUP still write the line (rc 128+signal).
 
 ## Installer `bench/install.sh [--check]`
 
