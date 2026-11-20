@@ -184,6 +184,35 @@ Details fixed by the implementation (`benchlib.rp2flash`):
   recovery from `tools/workbench-local-esptool`.
 - Same lock, hold, history and exit codes. 68 means esptool failed.
 
+Details fixed by the implementation (`benchlib.espflash`):
+- Tool: `BENCH_ESPTOOL`, else `/opt/bench/venv/bin/esptool`. Every run is
+  `esptool --port TTY --chip auto --before default-reset --after hard-reset CMD ...` with CMD
+  `chip-id`, `flash-id`, `read-flash 0 SIZE OUT` or `write-flash 0xOFF FILE`.
+- Usage (2) is checked before the lock and writes no history: the argv shape, a configured slot,
+  a `write-flash` offset matching `0x[0-9a-fA-F]+` and a readable, non-empty file, a `read-flash`
+  SIZE of `ALL`, decimal or 0x-hex above 0, and an existing directory for OUT.
+- `read-flash` and `write-flash` run `flash-id` first; its output goes to stderr without MAC lines,
+  followed by `identity: chip=.. flash=.. bytes`. A file that does not fit the detected flash at
+  its offset, or a SIZE above it, is refused with 2 (recorded in history). `read-flash` without
+  SIZE reads the detected size, or `ALL` when no size was detected.
+- `chip-id`/`flash-id` output is data on stdout. Read/write esptool output goes to stderr without
+  progress lines; `read N bytes to OUT` and, after a write, `first-line: ..` are on stdout.
+- esp-usb (port of `tools/workbench-local-esptool`): the tty is re-resolved at the port path before
+  every esptool run, waiting up to `BENCH_ESP_REENUM_WAIT` (12) for a re-enumerating board. A failed
+  run waits for the board to reappear at the path, sleeps 1 s and retries with `--before no-reset`:
+  at most `BENCH_ESP_ATTEMPTS` (3) runs per step, the last one with `--no-stub`. After the operation
+  it settles `BENCH_ESP_USB_SETTLE` (8) s, because the old tty lingers before re-enumerating. The
+  old tool's GPIO BOOT/EN forcing is not ported (no GPIO wiring on this bench). esp-uart: one run.
+- Then it waits up to `BENCH_ESP_APP_WAIT` (20) for an application tty at the path (the ESP32-S2
+  ROM `303a:0002` does not count). After a successful write its absence is 71 (saying "still in ROM
+  download mode" when only the ROM is there); after other verbs it is a note. The pause closes and,
+  for `write-flash`, the first line is reported as for RP2 (`BENCH_ESP_OPEN_WAIT` 15,
+  `BENCH_ESP_LINE_WAIT` 5).
+- No tty at all is 66. Each esptool run is bounded by `BENCH_ESP_TOOL_TIMEOUT` (900). The pause is
+  taken as `bench-flash-esp <client>`, with the same busy/no-owner rules as RP2. History verbs are
+  `esp-chip-id|esp-flash-id|esp-read-flash|esp-write-flash`, with sha256/size of the written file or
+  of the image read.
+
 ## `bench-usb` (root via sudo; the only privileged code)
 
 - `usb-reset SLOTn`: write `1`, then `0` (after 1 s), to
