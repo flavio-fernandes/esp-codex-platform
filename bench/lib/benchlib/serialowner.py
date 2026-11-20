@@ -313,7 +313,16 @@ class SerialOwner:
         listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         bound = False
         try:
-            # Never unlink a potentially live owner's socket at startup.
+            if self.socket_path.exists():
+                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
+                    probe.settimeout(1)
+                    try:
+                        probe.connect(str(self.socket_path))
+                    except (ConnectionRefusedError, FileNotFoundError):
+                        self.socket_path.unlink(missing_ok=True)
+                        self._log("stale socket removed")
+                    else:
+                        raise OSError(f"live serial owner already listening: {self.socket_path}")
             listener.bind(str(self.socket_path))
             bound = True
             os.chmod(self.socket_path, 0o660)

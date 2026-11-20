@@ -296,6 +296,31 @@ def test_live_socket_not_removed_by_second_owner(running):
     assert owner.socket_path.exists() and client.state("SLOT1")["open"]
 
 
+def test_stale_socket_replaced(roots):
+    (roots["etc"] / "slots.conf").write_text("SLOT1 1-1.1\n")
+    with socket.socket(socket.AF_UNIX) as stale:
+        stale.bind("run/SLOT1.sock")
+    owner = SerialOwner("SLOT1")
+    errors = []
+    def serve():
+        try:
+            owner.serve_forever()
+        except OSError as exc:
+            errors.append(exc)
+            owner.ready.set()
+    thread = threading.Thread(target=serve)
+    thread.start()
+    try:
+        assert owner.ready.wait(3)
+        assert not errors
+        assert client.state("SLOT1")["ok"]
+        assert "stale socket removed" in Path(owner.log.baseFilename).read_text()
+    finally:
+        owner.stop()
+        thread.join(3)
+        assert not thread.is_alive()
+
+
 def test_sigterm_entrypoint(roots):
     (roots["etc"] / "slots.conf").write_text("SLOT1 1-1.1\n")
     entrypoint = Path(__file__).resolve().parents[1] / "bin/bench-serial"
