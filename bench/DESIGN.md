@@ -112,6 +112,12 @@ SLOT6     1-1.3
   Errors: `{"ok":false,"error":"<code>","detail":".."}` with codes `bad-request`, `absent`,
   `paused`, `not-open`, `timeout`, `unsupported`.
 - Readiness contract: `state.open==true` means the tty is open **and** the reader thread runs.
+- Reset's low/high names refer to electrical levels: on active-low USB UART controls,
+  pyserial `dtr=False` holds DTR high; `rts=True`, wait 100 ms, `rts=False` pulses EN low→high.
+  Both controls finish deasserted. Reset is unsupported for native-USB ESP, even with monitoring on.
+- `wait` without `since_seq` searches only lines arriving after the request; with it, buffered
+  lines are searched first, including for a zero timeout. Tail accepts 0–1000 lines; durations
+  are finite nonnegative seconds (follow at most 600). Invalid types/ranges are `bad-request`.
 
 ## Locks, holds, history (`benchlib`)
 
