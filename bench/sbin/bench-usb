@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+"""Privileged USB recovery (root through sudo): usb-reset SLOTn | power-cycle."""
+from pathlib import Path
+import sys
+
+# Root helper: import only the checkout's library (when run from bench/sbin) or the installed one.
+checkout = Path(__file__).resolve().parents[1] / "lib"
+sys.path.insert(0, str(checkout) if (checkout / "benchlib/usbguard.py").is_file() else "/opt/bench/lib")
+from benchlib.usbguard import main
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -218,11 +218,26 @@ Details fixed by the implementation (`benchlib.espflash`):
 - `usb-reset SLOTn`: write `1`, then `0` (after 1 s), to
   `/sys/bus/usb/devices/<parent>:1.0/<parent>-port<N>/disable`. `<parent>` and `<N>` are split
   from the slot's port path.
-- `power-cycle`: `uhubctl -l <hub-location> -a cycle -d 3`. Only when `BENCH_POWER_CYCLE=1`.
+- `power-cycle`: `uhubctl -l <BENCH_HUB_LOCATION> -a cycle -d 3`. Only when `BENCH_POWER_CYCLE=1`.
 - **Guards** (unit-tested, refuse with exit 2):
   - the target must be a configured slot's port path, or the configured hub location;
   - the parent must not be a root hub (`usbN`);
   - no mass-storage device (`bInterfaceClass 08`) may sit anywhere in the affected subtree.
+
+Details fixed by the implementation (`benchlib.usbguard`, `bench/sbin/bench-usb`):
+- argv is exactly `usb-reset SLOTn` or `power-cycle`; anything else is refused with 2.
+- A guard refusal (2) touches nothing and writes no history. A port without its `disable` file
+  is refused too. The affected subtree is the slot's port for `usb-reset` and the whole hub for
+  `power-cycle`.
+- `usb-reset`: after the guards it takes the slot lock (65) and checks the hold (69; the client is
+  `BENCH_CLIENT`, else `SUDO_USER`). It writes `1`, waits 1 s, writes `0` (also on error), then
+  waits up to 10 s for a device at the path and prints
+  `SLOTn PATH: vid=.. pid=.. kind=.. tty=.. serial=..`, or "nothing came back" with exit 66.
+- `power-cycle`: `BENCH_POWER_CYCLE=1` in bench.env, else 2 ("disabled"). The hub is
+  `BENCH_HUB_LOCATION` in bench.env: a USB port path (never a root hub) that must also be listed in
+  `BENCH_HUB_PATHS`. A uhubctl failure, or no answer within 60 s, is 68.
+- History verbs: `usb-reset` (slot, plus kind and serial as found before) and `power-cycle`
+  (slot null, note `hub <location>`).
 
 ## `bench-camera snap|stats|burst`
 
