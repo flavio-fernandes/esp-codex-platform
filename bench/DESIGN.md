@@ -250,6 +250,21 @@ Details fixed by the implementation (`benchlib.usbguard`, `bench/sbin/bench-usb`
 - A JPEG missing its EOI marker is retried once.
 - `stats`: the PIL mean colour of lit pixels, as in the old tool.
 
+Details fixed by the implementation (`benchlib.camera`):
+- `snap OUT.jpg [exposure=auto|N] [res=WxH] [skip=N]`, `burst OUTDIR COUNT [same]` (COUNT 1–300,
+  frames `frame-NNN.jpg`, the frame count on stdout), `stats IN.jpg [threshold=N]` (JSON on stdout,
+  default threshold 128). Unknown options are usage errors.
+- bench.env: `BENCH_CAMERA_DEVICE` (default `/dev/video0`), `BENCH_CAMERA_EXPOSURE` (`auto`),
+  `BENCH_CAMERA_WIDTH`/`HEIGHT` (1280×720), `BENCH_CAMERA_SKIP` (10). Exposure is set before every
+  capture (`auto_exposure=3`, or `auto_exposure=1` plus `exposure_time_absolute=N`).
+- The deadline covers the lock wait and every v4l2-ctl call: `BENCH_CAMERA_SNAP_TIMEOUT` (20 s) for
+  a snap, plus 0.5 s per frame for a burst. Each call gets the time left; on expiry its whole process
+  group is killed. `camera.lock` is waited for up to `BENCH_CAMERA_LOCK_WAIT` (5 s).
+- A capture must start with `FF D8` and end with `FF D9` once trailing zero padding is stripped (the
+  padding is dropped from the file). One retry, then 4. OUT appears only complete (temp + rename).
+- Exit codes: 0 ok, 1 v4l2-ctl failed, 2 usage or no camera device, 3 camera timeout, 4 truncated
+  JPEG (or a burst without a complete frame), 65 camera busy.
+
 ## `bench-health [--json] [--quiet]`
 
 Writes `/run/bench/health.json` (the timer runs it every 5 minutes) and prints a summary. It
