@@ -72,10 +72,11 @@ def parse_identity(text):
     return (chip.group(1).strip() if chip else None), nbytes
 
 
-def esptool(port, args, timeout, stream, before="default-reset", stub=True, hide_mac=False):
+def esptool(port, args, timeout, stream, before="default-reset", stub=True, hide_mac=False, baud=None):
     """Run esptool on port; echo output without progress (or MAC) lines; return (rc, text)."""
     argv = [esptool_path(), "--port", port, "--chip", "auto", "--before", before,
-            "--after", "hard-reset", *([] if stub else ["--no-stub"]), *args]
+            "--after", "hard-reset", *([] if stub else ["--no-stub"]),
+            *(["--baud", str(baud)] if baud else []), *args]
     try:
         proc = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, timeout=timeout, check=False)
@@ -234,8 +235,14 @@ class Operation:
             if attempt > 1:
                 log(f"retrying esptool on {port} (attempt {attempt}/{attempts}, before={before}"
                     f"{'' if stub else ', no stub'})")
+            # USB-UART bridges (CP210x, CH340, FTDI) at the 115200 default need ~6 min for a 4 MB
+            # read (Argon W9, 2026-11-21). Bulk transfers run at BENCH_ESP_BAUD (default 921600);
+            # native USB ignores baud.
+            baud = None
+            if not self.native and args[0] in ("read-flash", "write-flash"):
+                baud = int(os.environ.get("BENCH_ESP_BAUD") or 921600)
             rc, text = esptool(port, args, self.limits["BENCH_ESP_TOOL_TIMEOUT"], stream, before, stub,
-                               hide_mac)
+                               hide_mac, baud)
             if rc == 0:
                 return rc, text
             self.note(f"esptool {args[0]} failed (rc={rc}, attempt {attempt}/{attempts})")

@@ -132,7 +132,7 @@ def test_write_flash_uart_identity_first_paused_first_line(bench, capsys):
     out = capsys.readouterr()
     assert bench.argv() == [
         ["--port", "/dev/ttyUSB0", *HEAD, "flash-id"],
-        ["--port", "/dev/ttyUSB0", *HEAD, "write-flash", "0x10000", str(firmware)]]
+        ["--port", "/dev/ttyUSB0", *HEAD, "--baud", "921600", "write-flash", "0x10000", str(firmware)]]
     assert all(call["paused_by"] == PAUSER for call in bench.calls())
     assert "first-line: booted 4321" in out.out
     assert "ESP32-S3" in out.err and "identity: chip=ESP32-S3 (QFN56) (revision v0.2) flash=4194304" in out.err
@@ -159,7 +159,7 @@ def test_identity_verbs_data_on_stdout_no_first_line(bench, capsys, action):
 def test_read_flash_default_size_is_detected_size(bench, capsys):
     target = bench.tmp_path / "backup.bin"
     assert espflash.main(["SLOT1", "read-flash", str(target)]) == 0
-    assert bench.argv()[1] == ["--port", "/dev/ttyUSB0", *HEAD, "read-flash", "0", "0x400000", str(target)]
+    assert bench.argv()[1] == ["--port", "/dev/ttyUSB0", *HEAD, "--baud", "921600", "read-flash", "0", "0x400000", str(target)]
     assert target.stat().st_size == 4 * 1024 * 1024
     assert "read 4194304 bytes" in capsys.readouterr().out
     record = last_history()
@@ -303,3 +303,12 @@ def test_entry_point_usage():
     result = subprocess.run([str(script), "SLOT1", "write-flash", "0x0"], capture_output=True,
                             text=True, timeout=30, check=False)
     assert result.returncode == 2 and "usage" in result.stderr
+
+
+def test_uart_bulk_baud_override(bench, monkeypatch):
+    """Argon W9 2026-11-21: at 115200 a 4 MB read took ~6.5 min; bulk transfers use 921600 (env override)."""
+    monkeypatch.setenv("BENCH_ESP_BAUD", "460800")
+    target = bench.tmp_path / "save.bin"
+    assert espflash.main(["SLOT1", "read-flash", str(target), "0x1000"]) == 0
+    assert "--baud" in bench.argv()[1] and bench.argv()[1][bench.argv()[1].index("--baud") + 1] == "460800"
+    assert "--baud" not in bench.argv()[0]  # identity stays at the default speed

@@ -63,8 +63,7 @@ def test_all_good(good):
     ("hub_present", False, "hub missing"),
     ("camera_present", False, "camera missing"),
     ("serial_service", "inactive", "SLOT1: serial monitor should be open"),
-    ("state", {"open": False, "paused": False}, "SLOT1: serial monitor should be open"),
-    ("state", {"open": False, "paused": True}, "SLOT1: serial monitor should be open")])
+    ("state", {"open": False, "paused": False}, "SLOT1: serial monitor should be open")])
 def test_problem(good, probe, value, reason):
     result = health.collect(probes={probe: lambda *args: value})
     assert not result["ok"] and result["problems"] == [reason]
@@ -229,3 +228,9 @@ def test_timer_and_service_contract():
     assert "OnBootSec=2min" in timer and "OnUnitActiveSec=5min" in timer
     assert "Type=oneshot" in service and "User=bench" in service
     assert "ExecStart=/usr/local/bin/bench-health --quiet" in service
+
+
+def test_paused_slot_is_not_a_problem(good):
+    """A flash or backup pauses the slot on purpose (Argon W9 2026-11-21 showed DEGRADED during esp-save)."""
+    result = health.collect(probes={"state": lambda *args: {"open": False, "paused": True}})
+    assert result["ok"] and result["problems"] == []

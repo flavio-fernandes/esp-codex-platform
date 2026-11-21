@@ -130,7 +130,8 @@ def collect(*, probes=None, now=None):
                 "serial_service": probe("serial_service", probe_service, slot),
                 "open": state.get("open", False), "paused": state.get("paused", False)}
         result["slots"][slot] = info
-        if (device and monitor_allowed(device["kind"], options["monitor"])
+        # A paused slot (a flash or backup in progress) is closed on purpose: not a problem.
+        if (device and monitor_allowed(device["kind"], options["monitor"]) and not info["paused"]
                 and (info["serial_service"] != "active" or not info["open"])):
             problems.append(f"{slot}: serial monitor should be open")
         hold = holds.get(slot)
