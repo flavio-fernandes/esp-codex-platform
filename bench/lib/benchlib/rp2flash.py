@@ -177,7 +177,10 @@ class Operation:
                         raise Failed(NO_APP, message)
                     self.note(message)
         # The pause connection is closed here; bench-serial may reopen the tty.
-        self._first_line(owner, seq)
+        if leave_in_bootsel:
+            print("first-line: (board in BOOTSEL)", flush=True)
+        else:
+            self._first_line(owner, seq)
         return rc
 
     def _pause(self, stack):

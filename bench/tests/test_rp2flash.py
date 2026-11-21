@@ -187,7 +187,7 @@ def test_info_already_bootsel_chosen_by_path(bench, capsys):
     assert [c["argv"] for c in bench.calls()] == [["info", "-a", *loc(9)]]
     assert "left in BOOTSEL" in out.err
     assert "Program Information" in out.out  # info data on stdout
-    assert "first-line: (no output yet)" in out.out
+    assert "first-line: (board in BOOTSEL)" in out.out
     assert "bench-serial is not running for SLOT2" in out.err
     assert last_history()["kind"] == "rp2-bootsel"
 
