@@ -183,7 +183,9 @@ def test_info_already_bootsel_chosen_by_path(bench, capsys):
     assert rp2flash.main(["info", "SLOT2"]) == 0
     out = capsys.readouterr()
     assert bench.touches == []
-    assert [c["argv"] for c in bench.calls()] == [["info", "-a", *loc(9)], ["reboot", *loc(9)]]
+    # Found in BOOTSEL (e.g. a blank board): info leaves it there and waits for no application.
+    assert [c["argv"] for c in bench.calls()] == [["info", "-a", *loc(9)]]
+    assert "left in BOOTSEL" in out.err
     assert "Program Information" in out.out  # info data on stdout
     assert "first-line: (no output yet)" in out.out
     assert "bench-serial is not running for SLOT2" in out.err
@@ -306,3 +308,13 @@ def test_entry_point_usage():
     result = subprocess.run([str(script), "load", "SLOT1"], capture_output=True, text=True,
                             timeout=30, check=False)
     assert result.returncode == 2 and "need one" in result.stderr
+
+
+def test_save_blank_bootsel_board_stays_in_bootsel(bench, capsys):
+    """Argon W8 2026-11-21: a blank RP2040 in BOOTSEL made pico-info/pico-save fail with 71."""
+    bench.mode("1-1.1", "bootsel")
+    target = bench.tmp_path / "blank.uf2"
+    assert rp2flash.main(["save", "SLOT1", str(target)]) == 0
+    assert [c["argv"][0] for c in bench.calls()] == ["save"]
+    assert "left in BOOTSEL" in capsys.readouterr().err
+    assert last_history()["rc"] == 0

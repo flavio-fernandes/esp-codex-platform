@@ -141,7 +141,9 @@ SLOT6     1-1.3
 4. `picotool <info -a | save -a FILE | load -v -x FILE> --bus B --address A` (bus and address
    of the BOOTSEL device at that path).
    - `load` of a filesystem-only UF2 exits 254 after `OK`: treat that as success with a warning.
-5. For `load`, and for `info`/`save` (which reboot the board): wait ≤30 s for the application tty
+5. A board **found in BOOTSEL** (blank, or parked) stays in BOOTSEL after `info`/`save`, with no application
+   wait. Otherwise (every `load`, and `info`/`save` of a running board, which reboot it back) wait ≤30 s for the
+   application tty
    at the same port path. Close the pause connection. Then wait ≤15 s for `bench-serial`
    `state.open`, and report the first line seen (or "no output yet").
 6. Append history. Exit codes:

@@ -159,11 +159,17 @@ class Operation:
         if device["kind"] not in RP2_KINDS:
             raise Failed(WRONG_KIND, f"{self.slot} holds {device['vid']}:{device['pid']} "
                                      f"({device['kind']}), not an RP2 board")
+        # A board found in BOOTSEL (blank, or parked there on purpose) is left in BOOTSEL by info/save:
+        # there may be no application to return to. Only a load must bring an application up.
+        self.started_bootsel = device["kind"] == "rp2-bootsel"
+        leave_in_bootsel = self.started_bootsel and self.action != "load"
         with ExitStack() as pause:
             owner = self._pause(pause)
             seq = self._seq() if owner else None
             rc = self._flash(device)
-            if not app_at(self.path):
+            if leave_in_bootsel:
+                log(f"{self.slot} was in BOOTSEL before {self.action}; left in BOOTSEL (no application wait)")
+            elif not app_at(self.path):
                 log(f"waiting up to {self.limits['BENCH_RP2_APP_WAIT']:g}s for the application tty")
                 if not poll(lambda: app_at(self.path), self.limits["BENCH_RP2_APP_WAIT"]):
                     message = f"{self.slot} application tty did not come back"
@@ -230,6 +236,8 @@ class Operation:
             self.note(f"picotool {self.action} failed (rc={rc})")
             result = PICOTOOL_FAILED
         # load -x starts the application itself; info and save (and failures) leave BOOTSEL.
+        if getattr(self, "started_bootsel", False) and self.action != "load":
+            return result
         if (self.action != "load" or result != OK) and usbdev.find_bootsel_at(self.path):
             picotool(["reboot", *location(boot)], self.limits["BENCH_RP2_REBOOT_TIMEOUT"], sys.stderr)
         return result
