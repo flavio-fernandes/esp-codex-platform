@@ -230,6 +230,14 @@ class Operation:
         args = ACTIONS[self.action] + ([self.file] if self.file else []) + location(boot)
         rc, output = picotool(args, self.limits["BENCH_RP2_PICOTOOL_TIMEOUT"],
                               sys.stdout if self.action == "info" else sys.stderr)
+        if self.action == "save" and rc != 0 and "Cannot determine the flash size" in output:
+            # A blank board has no binary info, so picotool cannot size the flash. Save the chip's
+            # standard flash range instead (override with BENCH_RP2_FLASH_BYTES) and say so.
+            size = int(os.environ.get("BENCH_RP2_FLASH_BYTES") or
+                       (4 << 20 if boot["pid"] == "000f" else 2 << 20))
+            self.note(f"flash size unknown (no binary info): saving the standard {size >> 20} MiB range")
+            args = ["save", "-r", "0x10000000", hex(0x10000000 + size), self.file] + location(boot)
+            rc, output = picotool(args, self.limits["BENCH_RP2_PICOTOOL_TIMEOUT"], sys.stderr)
         result = OK
         if rc == 0:
             pass

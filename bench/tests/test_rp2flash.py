@@ -318,3 +318,18 @@ def test_save_blank_bootsel_board_stays_in_bootsel(bench, capsys):
     assert [c["argv"][0] for c in bench.calls()] == ["save"]
     assert "left in BOOTSEL" in capsys.readouterr().err
     assert last_history()["rc"] == 0
+
+
+def test_save_blank_board_unknown_flash_size_falls_back_to_range(bench, capsys):
+    """Argon W8 2026-11-21: picotool save -a on a blank RP2040 cannot size the flash (rc 248)."""
+    bench.mode("1-1.1", "bootsel")
+    bench.scenario(save_all={"rc": 248, "out": "ERROR: Cannot determine the flash size, so cannot save "
+                                               "the entirety of flash, try --range."})
+    target = bench.tmp_path / "blank.uf2"
+    assert rp2flash.main(["save", "SLOT1", str(target)]) == 0
+    calls = [c["argv"] for c in bench.calls()]
+    assert calls[0][:2] == ["save", "-a"]
+    assert calls[1][:5] == ["save", "-r", "0x10000000", "0x10200000", str(target)]
+    assert target.read_bytes().startswith(b"UF2\n")
+    assert "standard 2 MiB range" in capsys.readouterr().err
+    assert "flash size unknown" in last_history()["note"]

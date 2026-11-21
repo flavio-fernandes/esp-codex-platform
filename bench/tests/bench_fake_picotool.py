@@ -27,7 +27,9 @@ def main(args):
     scenario_file = folder / "scenario.json"
     scenario = json.loads(scenario_file.read_text()) if scenario_file.exists() else {}
     key = args[0] + ("-u" if args[0] == "reboot" and "-u" in args else "")
-    spec = {"rc": 0, "then": None, **DEFAULTS[key], **scenario.get(key, {})}
+    if key == "save" and "-a" in args and "save-all" in scenario:
+        key = "save-all"
+    spec = {"rc": 0, "then": None, **DEFAULTS.get(key, DEFAULTS.get(key.split("-")[0], {})), **scenario.get(key, {})}
     path, dev = bench_fakeusb.find(state_file, int(args[args.index("--bus") + 1]),
                                    int(args[args.index("--address") + 1]))
     paused = None
@@ -43,7 +45,7 @@ def main(args):
         print("No accessible RP-series devices in BOOTSEL mode were found.")
         return 249
     if args[0] == "save" and spec["rc"] == 0:
-        Path(args[2]).write_bytes(b"UF2\nsaved-image")
+        Path(args[args.index("--bus") - 1]).write_bytes(b"UF2\nsaved-image")
     print(spec["out"])
     if spec["then"]:
         bench_fakeusb.set_mode(state_file, path, spec["then"])
