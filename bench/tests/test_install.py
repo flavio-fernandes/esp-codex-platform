@@ -35,15 +35,23 @@ def test_generated_udev_rejects_injection(hub):
         installer.manifest('/site', {'BENCH_HUB_PATHS': hub}, {})
 
 
-def test_enabled_instances(monkeypatch):
-    def run(*args):
-        assert args[:2] == ('systemctl', 'list-unit-files')
-        return SimpleNamespace(stdout='bench-serial@SLOT1.service enabled enabled\n'
-                               'bench-serial@SLOT2.service disabled enabled\n'
-                               'bench-serial@SLOT3.service enabled-runtime enabled\n'
-                               'bench-serial@.service disabled enabled\n')
+def test_enabled_instances(monkeypatch, tmp_path):
+    """Instances come from .wants links and loaded units; list-unit-files shows only the template
+    (Argon 2026-11-21: a removed slot's unit was never disabled)."""
+    wants = tmp_path / "etc/systemd/system/multi-user.target.wants"
+    wants.mkdir(parents=True)
+    (wants / "bench-serial@SLOT1.service").symlink_to("/dev/null")
+    (wants / "bench-serial@SLOT6.service").symlink_to("/dev/null")
+
+    def run(*args, check=True):
+        assert args[:3] == ('systemctl', 'list-units', '--all')
+        return SimpleNamespace(stdout='bench-serial@SLOT1.service loaded active running x\n'
+                               'bench-serial@SLOT3.service loaded active running x\n')
+    real_path = installer.Path
+    monkeypatch.setattr(installer, 'Path', lambda p, *a: real_path(str(tmp_path) + p) if str(p) == '/etc/systemd/system' else real_path(p, *a))
     monkeypatch.setattr(installer, 'run', run)
-    assert installer.enabled_serial() == {'bench-serial@SLOT1.service', 'bench-serial@SLOT3.service'}
+    assert installer.enabled_serial() == {'bench-serial@SLOT1.service', 'bench-serial@SLOT3.service',
+                                          'bench-serial@SLOT6.service'}
 
 
 def test_serial_unit_contract():

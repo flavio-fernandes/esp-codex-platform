@@ -2,6 +2,7 @@
 import grp
 import importlib.metadata
 import json
+import hashlib
 import os
 from pathlib import Path
 import pwd
@@ -78,9 +79,15 @@ def put(path, data, mode):
 
 
 def enabled_serial():
-    result = run('systemctl', 'list-unit-files', 'bench-serial@*.service', '--no-legend', '--no-pager')
-    return {line.split()[0] for line in result.stdout.splitlines()
-            if len(line.split()) > 1 and line.split()[1].startswith('enabled')}
+    """Instances of bench-serial@ that are enabled or loaded. list-unit-files shows only the
+    template (bench-serial@.service), never instances, so a removed slot's unit was never
+    disabled (Argon, 2026-11-21). Use the .wants links and the loaded units instead."""
+    names = {link.name for link in Path('/etc/systemd/system').glob('*.wants/bench-serial@*.service')}
+    result = run('systemctl', 'list-units', '--all', '--plain', '--no-legend', '--no-pager',
+                 'bench-serial@*.service', check=False)
+    names |= {line.split()[0] for line in result.stdout.splitlines()
+              if line.split() and line.split()[0].startswith('bench-serial@')}
+    return {name for name in names if name != 'bench-serial@.service'}
 
 
 def check_install():
@@ -247,6 +254,21 @@ def install():
             run('systemctl', 'disable', '--now', unit)
         for unit in sorted(desired | {'bench-health.timer'}):
             run('systemctl', 'enable', '--now', unit)
+        # A running serial owner keeps the slot map and code it started with. Restart the owners
+        # when either changed since the last install (Argon, 2026-11-21: a remap left them on
+        # the old port paths).
+        stamp = Path('/var/lib/bench/.install-stamp')
+        signature = hashlib.sha256(b''.join(
+            Path(name).read_bytes() for name in ('/etc/bench/slots.conf', '/etc/bench/bench.env')
+            if Path(name).exists())).hexdigest()
+        previous = stamp.read_text().strip() if stamp.exists() else ''
+        code_changed = any(name.startswith(('/opt/bench/lib/', '/usr/local/bin/bench-serial'))
+                           for name in changed)
+        if signature != previous or code_changed:
+            for unit in sorted(desired):
+                run('systemctl', 'restart', unit)
+            print('restarted serial owners (' + ('config' if signature != previous else 'code') + ' changed)')
+        put(str(stamp), (signature + '\n').encode(), 0o644)
         run('systemctl', 'reload', 'ssh')
     print('INSTALL OK')
     return 0
