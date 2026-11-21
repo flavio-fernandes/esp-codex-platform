@@ -215,7 +215,14 @@ def install():
         candidate.write(f'Include {SOURCE}/sshd/50-bench-agent.conf\nInclude /etc/ssh/sshd_config\n')
         candidate.flush()
         run('/usr/sbin/sshd', '-t', '-f', candidate.name)
+    changed = set()
     for name, (data, mode) in files.items():
+        try:
+            same = Path(name).read_bytes() == data
+        except OSError:
+            same = False
+        if not same:
+            changed.add(name)
         put(name, data, mode)
     run('/usr/sbin/sshd', '-t')
     run('systemd-tmpfiles', '--create', '/etc/tmpfiles.d/bench.conf', '/etc/tmpfiles.d/bench-slots.conf')
@@ -226,9 +233,15 @@ def install():
         print('BENCH_NO_SYSTEMD=1: skipped daemon reloads and obsolete-instance reconciliation')
     else:
         run('udevadm', 'control', '--reload-rules')
-        run('udevadm', 'trigger', '--subsystem-match=usb', '--action=change')
-        run('systemctl', 'restart', 'systemd-journald')
-        run('journalctl', '--flush')
+        # Re-trigger only the bench hubs' subtrees, never every USB device: the root disk is USB too.
+        for hub in env.get('BENCH_HUB_PATHS', '').split():
+            if Path('/sys/bus/usb/devices', hub).exists():
+                run('udevadm', 'trigger', '--action=change', '--subsystem-match=usb',
+                    '--parent-match=' + str(Path('/sys/bus/usb/devices', hub).resolve()))
+        # Restart journald only when its drop-in changed (a restart flushes to disk under load).
+        if any(name.startswith('/etc/systemd/journald.conf.d/') for name in changed):
+            run('systemctl', 'restart', 'systemd-journald')
+            run('journalctl', '--flush')
         run('systemctl', 'daemon-reload')
         for unit in sorted(enabled_serial() - desired):
             run('systemctl', 'disable', '--now', unit)
