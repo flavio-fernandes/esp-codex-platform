@@ -312,3 +312,16 @@ def test_uart_bulk_baud_override(bench, monkeypatch):
     assert espflash.main(["SLOT1", "read-flash", str(target), "0x1000"]) == 0
     assert "--baud" in bench.argv()[1] and bench.argv()[1][bench.argv()[1].index("--baud") + 1] == "460800"
     assert "--baud" not in bench.argv()[0]  # identity stays at the default speed
+
+
+def test_fast_baud_transfer_error_falls_back_to_115200(bench, capsys):
+    """Argon W9 2026-11-21: a clone CP2102 failed every read at 230400-921600 and passed at 115200."""
+    bench.scenario(read_flash=[{"rc": 2, "out": "Reading from 0x00031000 \u2501 4.8% 196.00kB/4.00MB [2s]\n"
+                                            "A fatal error occurred: Packet content transfer stopped"}, {}])
+    target = bench.tmp_path / "save.bin"
+    assert espflash.main(["SLOT1", "read-flash", str(target), "0x1000"]) == 0
+    reads = [argv for argv in bench.argv() if "read-flash" in argv]
+    assert "--baud" in reads[0] and "--baud" not in reads[1]
+    err = capsys.readouterr().err
+    assert "retried at the 115200 default" in err
+    assert "Reading from" not in err  # esptool 5 progress bars are filtered

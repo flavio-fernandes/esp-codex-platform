@@ -30,7 +30,8 @@ WAITS = {"BENCH_ESP_REENUM_WAIT": 12, "BENCH_ESP_USB_SETTLE": 8, "BENCH_ESP_APP_
 ACTIONS = ("chip-id", "flash-id", "read-flash", "write-flash")
 OFFSET_RE = re.compile(r"0x[0-9a-fA-F]+\Z")
 SIZE_RE = re.compile(r"(?:0x[0-9a-fA-F]+|[0-9]+|ALL)\Z")
-PROGRESS = re.compile(r".*(?:\[[=>. ]*\]\s*[0-9.]+\s*%|\(\s*[0-9]+\s*%\s*\)).*")
+PROGRESS = re.compile(r".*(?:\[[=>. ]*\]\s*[0-9.]+\s*%|\(\s*[0-9]+\s*%\s*\)|^(?:Reading from|Writing at|Erasing at|Checking|Compressed) .*[0-9.]+%.*).*")
+TRANSFER_ERROR = re.compile(r"Packet content transfer stopped|Timed out waiting for packet|Invalid head of packet|Serial data stream stopped|Failed to (?:read|write)")
 MAC = re.compile(r"\bMAC\b|BASE MAC", re.IGNORECASE)
 CHIP = re.compile(r"(?:Chip is|Chip type:)\s*(.+)")
 FLASH_SIZE = re.compile(r"Detected flash size:\s*([0-9]+)\s*(KB|MB)")
@@ -243,6 +244,12 @@ class Operation:
                 baud = int(os.environ.get("BENCH_ESP_BAUD") or 921600)
             rc, text = esptool(port, args, self.limits["BENCH_ESP_TOOL_TIMEOUT"], stream, before, stub,
                                hide_mac, baud)
+            if rc != 0 and baud and TRANSFER_ERROR.search(text):
+                # Some USB-UART bridges (a clone CP2102 on Argon, 2026-11-21) cannot sustain the fast
+                # rate: every read failed at 230400-921600 and passed at 115200. Fall back once.
+                self.note(f"esptool {args[0]} failed at {baud} baud; retried at the 115200 default")
+                rc, text = esptool(port, args, self.limits["BENCH_ESP_TOOL_TIMEOUT"], stream, before, stub,
+                                   hide_mac, None)
             if rc == 0:
                 return rc, text
             self.note(f"esptool {args[0]} failed (rc={rc}, attempt {attempt}/{attempts})")
