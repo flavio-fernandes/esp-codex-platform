@@ -43,6 +43,8 @@ bench-agent verbs (ssh bench-agent <verb> ...):
   flash-esp SLOTn flash-id|chip-id       ESP identity on stdout
   flash-esp SLOTn write-flash 0xOFF < image.bin
   esp-save SLOTn [SIZE]                  flash backup on stdout (SIZE: ALL, decimal or 0x-hex)
+  wifi-provision SLOTn < creds           give the board Wi-Fi over serial (Improv): stdin = SSID line,
+                                         password line; never logged or stored
   usb-reset SLOTn                        re-enumerate the slot's USB port
   power-cycle                            power-cycle the bench hub (only if enabled)
   hold SLOTn MINUTES REASON...           reserve a slot (1-720 min): other clients' mutations get 69
@@ -101,6 +103,24 @@ numbers restart when the owner restarts.
 For ESP, perform `flash-esp SLOTn flash-id` first, back up with `esp-save`, then
 `flash-esp SLOTn write-flash 0x0 < firmware.factory.bin`. Use a merged image,
 not an application-only binary at zero. See [ESP](references/esp.md).
+
+## Wi-Fi without secrets in the build
+
+Build machines never see Wi-Fi credentials. Build the image **without** them and
+provision it on the bench afterwards, over the slot's serial port:
+
+- ESPHome: `wifi:` with `ap: {}` and **no** `ssid`/`password`, plus `improv_serial:`
+  (and keep `logger:` on its default UART/USB port). No `!secret` anywhere.
+- After the flash and the first fresh serial line:
+  `printf '%s\n%s\n' "$SSID" "$PASSWORD" | ssh bench-agent wifi-provision SLOTn`.
+  Prints `url: http://<ip>` and `state: provisioned`. The credentials go only on
+  stdin: never on a command line, in a file on a build host, or in a log.
+- Provision again after **every** flash: an ESP32 factory image written at 0x0
+  overwrites the NVS partition that holds them (a UF2 may keep them; don't rely
+  on it). Check `state: provisioned` before any network test.
+- Exit 68 = device error, no improv answer (no `improv_serial:`, or the logger
+  not on that port) or no join within 45 s. `history` records only that a
+  provisioning happened.
 
 ## Sharing, history and failures
 

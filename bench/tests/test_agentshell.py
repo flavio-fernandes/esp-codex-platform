@@ -16,7 +16,7 @@ from benchlib import history, holds, locks
 
 TESTS = Path(__file__).resolve().parent
 SHELL = TESTS.parent / "bin/bench-agent-shell"
-TOOLS = ("bench-flash-rp2", "bench-flash-esp", "bench-camera", "bench-health", "sudo", "logger")
+TOOLS = ("bench-flash-rp2", "bench-flash-esp", "bench-camera", "bench-health", "sudo", "logger", "bench-wifi-provision")
 UF2 = b"UF2\n" + bytes(508)
 
 
@@ -459,3 +459,23 @@ def test_history(bench):
     assert result.returncode == 0
     assert [json.loads(line)["note"] for line in result.stdout.splitlines()] == ["27", "28", "29"]
     assert len(bench.run("history").stdout.splitlines()) == 20
+
+
+def test_wifi_provision_passes_credentials_on_stdin_only(bench):
+    creds = b"bench-ssid\nsuper-secret-pass\n"
+    result = bench.run("wifi-provision SLOT2", stdin=creds)
+    assert result.returncode == 0 and b"state: provisioned" in result.stdout
+    call = bench.calls()[0]
+    assert call["tool"] == "bench-wifi-provision" and call["argv"] == ["SLOT2"] and call["client"] == "claude"
+    assert call["stdin_size"] == len(creds)
+    audit = bench.last_audit()
+    assert f"credentials size={len(creds)}" in audit
+    assert "super-secret-pass" not in audit and "bench-ssid" not in audit
+    assert b"super-secret-pass" not in result.stdout + result.stderr
+
+
+def test_wifi_provision_refusals(bench):
+    assert bench.run("wifi-provision SLOT2", stdin=b"").returncode == 2
+    assert bench.run("wifi-provision SLOT2", stdin=bytes(513)).returncode == 2
+    assert bench.run("wifi-provision SLOT2 extra", stdin=b"a\nb\n").returncode == 2
+    assert bench.calls() == []

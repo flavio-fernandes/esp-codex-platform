@@ -21,8 +21,11 @@ def main(name):
         with open(state / "audit.log", "a") as log:
             log.write(json.dumps(argv) + "\n")
         return
+    entry = {"tool": name, "argv": argv, "client": os.environ.get("BENCH_CLIENT")}
+    if name == "bench-wifi-provision":
+        entry["stdin_size"] = len(sys.stdin.buffer.read())  # the size only: never record credentials
     with open(state / "calls.jsonl", "a") as log:
-        log.write(json.dumps({"tool": name, "argv": argv, "client": os.environ.get("BENCH_CLIENT")}) + "\n")
+        log.write(json.dumps(entry) + "\n")
     rc = int(os.environ.get("FAKE_RC_" + name.replace("-", "_").upper(), "0"))
     out = sys.stdout
     if name == "bench-flash-rp2":
@@ -33,6 +36,8 @@ def main(name):
         if argv[0] in ("save", "load"):
             sys.stderr.write("picotool: Saving file: [=====] 100%\n")
             out.write("first-line: hello from rp2\n")
+    elif name == "bench-wifi-provision":
+        out.write("url: http://192.0.2.50\nstate: provisioned\n")
     elif name == "bench-flash-esp":
         if argv[1] in ("chip-id", "flash-id"):
             out.write("Chip is ESP32-D0WD-V3\n")

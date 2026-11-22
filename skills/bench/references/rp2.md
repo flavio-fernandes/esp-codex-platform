@@ -83,3 +83,9 @@ the dim white text phase (lit ~0.02) from counting as blue.
 
 Whole-flash backups (`pico-save`) carry Wi-Fi credentials. On shared benches the
 operator, not an automated worker, takes and restores them.
+## Wi-Fi for ESPHome images (Pico W / Pico 2 W)
+
+ESPHome on RP2 (`rp2:` with `board: rpipicow`; the older `rp2040:` key is deprecated) is built
+without credentials: `wifi: ap: {}` + `improv_serial:`, no `!secret`. After `flash-pico` and a
+fresh serial line, pipe the SSID and password lines to `ssh bench-agent wifi-provision SLOTn`.
+The CDC port is opened with DTR high, as `bench-serial` does, so the logger keeps talking.

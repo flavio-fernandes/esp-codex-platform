@@ -30,6 +30,7 @@ CLIENT_RE = re.compile(r"[A-Za-z0-9_.@-]{1,64}")
 OFFSET = re.compile(r"0x[0-9a-fA-F]+")
 UF2_MAGIC = b"UF2\n"
 DEFAULT_MAX_FW_BYTES = 16 * 1024 * 1024
+WIFI_MAX = 512
 BENCH_USB = "/usr/local/sbin/bench-usb"
 TOOL_PROBE_TIMEOUT = 5
 
@@ -55,6 +56,8 @@ bench-agent verbs (ssh bench-agent <verb> ...):
   flash-esp SLOTn flash-id|chip-id       ESP identity on stdout
   flash-esp SLOTn write-flash 0xOFF < image.bin
   esp-save SLOTn [SIZE]                  flash backup on stdout (SIZE: ALL, decimal or 0x-hex)
+  wifi-provision SLOTn < creds           give the board Wi-Fi over serial (Improv): stdin = SSID line,
+                                         password line; never logged or stored
   usb-reset SLOTn                        re-enumerate the slot's USB port
   power-cycle                            power-cycle the bench hub (only if enabled)
   hold SLOTn MINUTES REASON...           reserve a slot (1-720 min): other clients' mutations get 69
@@ -429,6 +432,24 @@ class Shell:
             self.emit_file(out)
         return rc
 
+    def v_wifi_provision(self, words):
+        """Credentials pass from our stdin straight to the tool's stdin: never a file, an argv
+        or a hash; the audit line records only their size."""
+        self.arity(words, 1, 1, "wifi-provision SLOTn < creds")
+        slot, path = self.slot(words[1])
+        self.need_kind(slot, path, ("esp-uart", "esp-usb", "rp2"))
+        data = sys.stdin.buffer.read(WIFI_MAX + 1)
+        if not data or len(data) > WIFI_MAX:
+            raise Refuse(REFUSED, f"stdin must be two lines, SSID then password (at most {WIFI_MAX} bytes)")
+        self.extra.append(f"credentials size={len(data)}")
+        sys.stdout.flush()
+        try:
+            proc = subprocess.run(["bench-wifi-provision", slot], input=data, env=self.env, check=False,
+                                  stdout=1)
+        except OSError as exc:
+            raise Refuse(FAILED, f"cannot run bench-wifi-provision: {exc.strerror}") from None
+        return proc.returncode
+
     def v_usb_reset(self, words):
         self.arity(words, 1, 1, "usb-reset SLOTn")
         slot, _ = self.slot(words[1])
@@ -469,7 +490,8 @@ class Shell:
              "serial-follow": v_serial_follow, "serial-write": v_serial_write, "reset": v_reset,
              "snap": v_snap, "snap-stats": v_snap_stats, "seq": v_seq, "burst": v_burst,
              "pico-info": v_pico_info, "pico-save": v_pico_save, "flash-pico": v_flash_pico,
-             "flash-esp": v_flash_esp, "esp-save": v_esp_save, "usb-reset": v_usb_reset,
+             "flash-esp": v_flash_esp, "esp-save": v_esp_save, "wifi-provision": v_wifi_provision,
+             "usb-reset": v_usb_reset,
              "power-cycle": v_power_cycle, "hold": v_hold, "release": v_release}
 
     def dispatch(self):

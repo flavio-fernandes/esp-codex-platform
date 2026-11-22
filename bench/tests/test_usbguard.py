@@ -39,6 +39,9 @@ def hub(roots, usb, tmp_path, monkeypatch):
     uhubctl.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
     monkeypatch.setenv("BENCH_CLIENT", "client-a")
+    # As root, main() drops the BENCH_* overrides and would act on the real /sys: always run as
+    # a non-root user here, so the fake tree is used even when pytest itself runs as root.
+    monkeypatch.setattr(usbguard.os, "geteuid", lambda: 1000)
     pauses = []
     monkeypatch.setattr(usbguard, "sleep", lambda seconds: pauses.append(
         (seconds, (devices / "1-1:1.0/1-1-port1/disable").read_text())))

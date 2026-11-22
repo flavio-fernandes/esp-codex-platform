@@ -50,3 +50,10 @@ uses bounded reset-aware retries and settling time, and reports an application
 that never returns as 71 after a write. No client-side retry loops or manual
 GPIO BOOT/EN forcing. For failures capture health/status/tail; request physical
 recovery if required. Never bypass the restricted interface.
+## Wi-Fi for ESPHome images
+
+Images are built without credentials (`wifi: ap: {}` + `improv_serial:`, no `!secret`). After
+`write-flash` and a fresh serial line, run
+`printf '%s\n%s\n' "$SSID" "$PASSWORD" | ssh bench-agent wifi-provision SLOTn`. Do it after every
+flash: the factory image overwrites NVS. On a CP2102/CH340 board the port is opened with DTR/RTS
+deasserted, so provisioning does not reset the chip.

@@ -221,6 +221,22 @@ Details fixed by the implementation (`benchlib.espflash`):
   `esp-chip-id|esp-flash-id|esp-read-flash|esp-write-flash`, with sha256/size of the written file or
   of the image read.
 
+## `bench-wifi-provision SLOTn` (Improv Wi-Fi over serial)
+
+Firmware is built on hosts that must never hold Wi-Fi credentials, so images are built without
+them (ESPHome `wifi: ap: {}` + `improv_serial:`) and provisioned here.
+- stdin: SSID line, password line (≤512 bytes; SSID 1–32 bytes, password ≤64). They are never
+  logged, printed, written to disk or put on a command line; the agent shell's audit records only
+  `credentials size=N`, and history (`verb=wifi-provision`) only kind, rc and the reported URL.
+- Lock, hold check and `bench-serial` pause as for a flash. Kinds esp-uart, esp-usb, rp2. The port
+  is opened with the slot's modem-line policy (an esp-uart is not reset by the open).
+- Protocol (`benchlib/improv.py`): request the current state up to 8× (2 s each) while the device
+  boots; refuse "awaiting authorization"; send the Wi-Fi RPC; wait ≤45 s for the RPC result
+  (URL) or `provisioned`. The reader scans past log text and validates version, type and checksum
+  before trusting a length byte.
+- Exit codes: 0, 2 usage, 65 busy, 66 absent, 68 device error / no answer / timeout, 69 held,
+  70 wrong kind.
+
 ## `bench-usb` (root via sudo; the only privileged code)
 
 - `usb-reset SLOTn`: write `1`, then `0` (after 1 s), to
