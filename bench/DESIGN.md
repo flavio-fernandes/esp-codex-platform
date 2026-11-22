@@ -133,6 +133,10 @@ SLOT6     1-1.3
 - **Hold** (`benchlib.holds`): `/var/lib/bench/holds/SLOTn.json` = `{client, reason, since, until}`.
   `hold SLOTn MINUTES REASON` (1–720 min) by client A makes every mutating verb from any other
   client fail with code 69 and the hold's text. Read-only verbs still work. Expired holds are ignored.
+  The holds directory is group-writable and the root helper reads it, so a hold file is opened
+  `O_NOFOLLOW|O_NONBLOCK`, must be a regular file of at most 4 KiB with the expected field types,
+  and is never echoed. Anything else is an **unreadable hold**: it fails closed (69 for every
+  client; `status` shows `hold=UNREADABLE`; health is not idle), and any client may `release` it.
 - **History** (`benchlib.history.append(...)`): one JSON line per mutating verb in
   `/var/lib/bench/flash-history.jsonl`, written with `O_APPEND` and an fsync:
   `{ts, client, verb, slot, kind, usb_serial, sha256, size, rc, seconds, note}`.
@@ -311,7 +315,8 @@ are the literal strings `error -71`, `error -110`, `USB disconnect`, `over-curre
 `throttled` is a hexadecimal string (or null if unavailable). Missing optional probes
 produce null and a `notes` entry, not a crash; missing serial state reports open/paused
 false with a note. Invalid configuration, unreadable lock/hold/history state, or failed
-publication is exit 2, never a trustworthy idle verdict.
+publication is exit 2, never a trustworthy idle verdict. An unreadable hold file counts as a
+hold (`unreadable: true`), so it also blocks the idle verdict.
 
 `BENCH_HUB_PATHS` in bench.env is a space-separated list of USB port paths; every path
 must exist. An empty list means hub missing. `BENCH_CAMERA_DEVICE` must exist.
@@ -373,8 +378,9 @@ Details fixed by the implementation (`benchlib.agentshell`):
   the sudoers rule (W7) must `env_keep` `BENCH_CLIENT`, or bench-usb sees only `SUDO_USER`.
 - Stdin payloads are read up to `BENCH_MAX_FW_BYTES` (bench.env, default 16 MiB); empty or larger
   is refused before the tool runs. `flash-pico` also needs the `UF2\n` magic.
-- The shell's own mutations: `serial-write` checks the hold (69); `reset` takes the slot lock
-  (65), checks the hold and records history verb `reset`; `hold`/`release` use `benchlib.holds`.
+- The shell's own mutations take the slot lock across the hold check and the action, so no hold
+  can land in between (`holds.put` takes the same lock): `serial-write` (65 busy, 69 held) and
+  `reset` (65, 69, history verb `reset`); `hold`/`release` use `benchlib.holds`.
 - Audit: exactly one `logger -t bench-agent -- LINE` per call, at the end:
   `client=C from=IP cmd=[RAW] rc=N[ payload sha256=<64 hex> size=N][ stats=<json>][ err=[MSG]]`.
   `from` is the first word of `SSH_CONNECTION` (`local` without it). RAW is cut at 420 characters
@@ -389,7 +395,8 @@ Details fixed by the implementation (`benchlib.agentshell`):
   - `2e8a` → group plugdev;
   - `power/control=on` for the bench hub (05e3:0610/0626) and any device on a slot port.
 - Never touches: hostname, wlan0/NetworkManager, docker, ufw, sshd except one drop-in
-  (`Match User wbagent`: no forwarding, no PTY), or authorized_keys.
+  (`Match User wbagent`: `DisableForwarding yes`, no stream-local forwarding, no PTY), or
+  authorized_keys.
 - Installed Python entry points use `#!/opt/bench/venv/bin/python -I`; the root-owned
   venv has `bench.pth` pointing at `/opt/bench/lib`. Isolated mode ignores caller Python
   environment variables, including for the sudo helper. esptool is constrained to `>=5,<6`.
@@ -404,6 +411,13 @@ Details fixed by the implementation (`benchlib.agentshell`):
 - `--check` changes nothing and reports drift as a list, returning 1 on drift and 0 with
   `NO DRIFT`. Run as root to inspect password locking. Operator config contents are not
   compared against examples, but are parsed and used to check generated files/units.
+  wbagent's `authorized_keys` is audited line by line, because wbagent has a real login shell
+  (sshd runs the forced command through it): each key needs `restrict`, exactly one
+  `command="/usr/local/bin/bench-agent-shell CLIENT"`, and only `no-*`, `from=` or `expiry-time=`
+  besides. A key without them would be a shell on the bench, reaching the ttys and serial
+  sockets past every lock and hold. Findings name line numbers, never key material.
+- `bench-serial@` runs with `UMask=0027`, and install drops the other-read bit from older
+  serial logs: they hold device output (SSIDs, IPs).
 - W7 container verification cannot prove real boot, tty permissions or daemon operation;
   those remain the real-host commissioning gate.
 

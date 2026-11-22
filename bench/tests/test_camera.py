@@ -121,6 +121,14 @@ def test_hanging_v4l2_ctl_times_out_with_3(cam, monkeypatch, capsys):
         pass
 
 
+@pytest.mark.parametrize("value", ["nan", "inf", "-1", "soon"])
+def test_timeout_env_must_be_finite(cam, monkeypatch, capsys, value):
+    monkeypatch.setenv("BENCH_CAMERA_SNAP_TIMEOUT", value)   # nan or inf would never time out
+    assert camera.main(["snap", str(cam.out)]) == 2
+    assert "finite nonnegative" in capsys.readouterr().err
+    assert cam.captures() == []
+
+
 def test_hanging_entry_point_kills_the_process_group(cam, monkeypatch):
     cam.mode("hang")
     monkeypatch.setenv("BENCH_CAMERA_SNAP_TIMEOUT", "1")

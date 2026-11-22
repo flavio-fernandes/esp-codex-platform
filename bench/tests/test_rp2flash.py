@@ -303,6 +303,12 @@ def test_bad_wait_env_2(bench, monkeypatch):
     assert rp2flash.main(["info", "SLOT1"]) == 2
 
 
+@pytest.mark.parametrize("size", ["2MB", "0", "-1", str(1 << 30)])
+def test_bad_flash_bytes_env_is_usage_not_a_traceback(bench, monkeypatch, size):
+    monkeypatch.setenv("BENCH_RP2_FLASH_BYTES", size)
+    assert rp2flash.main(["info", "SLOT1"]) == 2
+
+
 def test_entry_point_usage():
     script = TESTS.parent / "bin/bench-flash-rp2"
     result = subprocess.run([str(script), "load", "SLOT1"], capture_output=True, text=True,

@@ -62,6 +62,10 @@ def waits():
                          + (" (a whole count >= 1)" if name == "BENCH_ESP_ATTEMPTS" else ""))
         result[name] = value
     result["BENCH_ESP_ATTEMPTS"] = int(result["BENCH_ESP_ATTEMPTS"])
+    baud = os.environ.get("BENCH_ESP_BAUD") or "921600"
+    if not (baud.isascii() and baud.isdigit() and 9600 <= int(baud) <= 5000000):
+        raise Failed(USAGE, "BENCH_ESP_BAUD must be a whole baud rate from 9600 to 5000000")
+    result["BENCH_ESP_BAUD"] = int(baud)
     return result
 
 
@@ -241,7 +245,7 @@ class Operation:
             # native USB ignores baud.
             baud = None
             if not self.native and args[0] in ("read-flash", "write-flash"):
-                baud = int(os.environ.get("BENCH_ESP_BAUD") or 921600)
+                baud = self.limits["BENCH_ESP_BAUD"]
             rc, text = esptool(port, args, self.limits["BENCH_ESP_TOOL_TIMEOUT"], stream, before, stub,
                                hide_mac, baud)
             if rc != 0 and baud and TRANSFER_ERROR.search(text):

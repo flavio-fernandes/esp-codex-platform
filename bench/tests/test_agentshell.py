@@ -455,6 +455,19 @@ def test_hold_blocks_other_clients_mutations(bench):
     assert stub1.requests[0]["op"] == "state"
 
 
+def test_unreadable_hold_shows_in_status_blocks_and_can_be_released(bench, roots):
+    stub = bench.stub("SLOT2")
+    (roots["state"] / "holds").mkdir(parents=True, exist_ok=True)
+    (roots["state"] / "holds" / "SLOT2.json").write_text("{broken")
+    status = bench.run("status").stdout.decode()
+    assert "hold=UNREADABLE reason=[unreadable hold file (not JSON)" in status
+    result = bench.run("serial-write SLOT2 hi")
+    assert result.returncode == 69 and b"unreadable hold file" in result.stderr
+    assert [r["op"] for r in stub.requests] == ["state"]   # status only: nothing was written
+    assert bench.run("release SLOT2", client="hermes").returncode == 0
+    assert bench.run("serial-write SLOT2 hi").returncode == 0
+
+
 def test_tools_get_the_client_for_their_own_hold_checks(bench):
     holds.put("SLOT1", "claude", 5, "mine")
     bench.run("pico-info SLOT1", client="hermes", FAKE_RC_BENCH_FLASH_RP2="69")

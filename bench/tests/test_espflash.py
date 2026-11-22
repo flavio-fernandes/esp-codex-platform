@@ -298,6 +298,12 @@ def test_bad_wait_env_2(bench, monkeypatch):
     assert espflash.main(["SLOT1", "chip-id"]) == 2
 
 
+@pytest.mark.parametrize("baud", ["fast", "0", "1e6", "99999999"])
+def test_bad_baud_env_is_usage_not_a_traceback(bench, monkeypatch, baud):
+    monkeypatch.setenv("BENCH_ESP_BAUD", baud)
+    assert espflash.main(["SLOT1", "chip-id"]) == 2
+
+
 def test_entry_point_usage():
     script = TESTS.parent / "bin/bench-flash-esp"
     result = subprocess.run([str(script), "SLOT1", "write-flash", "0x0"], capture_output=True,

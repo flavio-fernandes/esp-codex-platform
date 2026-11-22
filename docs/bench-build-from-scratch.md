@@ -162,7 +162,7 @@ journalctl -k -b
 journalctl --list-boots
 ```
 
-Serial logs live in `/var/lib/bench/serial/SLOTn.log` (5 MiB, five backups).
+Serial logs live in `/var/lib/bench/serial/SLOTn.log` (5 MiB, five backups; mode 0640 `bench:bench`, so an admin reads them with `sudo`).
 `/var/lib/bench/flash-history.jsonl` records mutations, hashes, rc and timing;
 `ssh bench-agent history 20` reads recent entries. Holds live under
 `/var/lib/bench/holds/`. `/run/bench/health.json` is a volatile health snapshot.

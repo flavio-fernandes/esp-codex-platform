@@ -6,6 +6,7 @@ import hashlib
 import os
 from pathlib import Path
 import pwd
+import re
 import subprocess
 import sys
 import sysconfig
@@ -90,6 +91,54 @@ def enabled_serial():
     return {name for name in names if name != 'bench-serial@.service'}
 
 
+FORCED = re.compile(r'command="/usr/local/bin/bench-agent-shell [A-Za-z0-9_.@-]{1,64}"')
+SAFE_OPTIONS = re.compile(r'restrict|no-[a-z0-9-]+|from="[^"]*"|expiry-time="[^"]*"')
+
+
+def key_options(line):
+    """Split the options field of an authorized_keys line (quote-aware); None when there is none."""
+    options, current, quoted = [], '', False
+    for index, char in enumerate(line):
+        if char == '"':
+            quoted = not quoted
+        elif not quoted and char == ',':
+            options.append(current)
+            current = ''
+            continue
+        elif not quoted and char in ' \t':
+            options.append(current)
+            return options, line[index:].strip()
+        current += char
+    return None, line
+
+
+def audit_authorized_keys(text):
+    """Every wbagent key must be restrict + the forced bench-agent-shell command, and nothing that
+    re-enables a feature (pty, port-forwarding, ...). Findings name line numbers, never key material."""
+    problems = []
+    for number, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith('#'):
+            continue
+        options, rest = key_options(line)
+        if options is None or re.match(r'(ssh-|ecdsa-|sk-)', line):
+            problems.append(f'authorized_keys line {number}: no options (needs restrict and the forced command)')
+            continue
+        forced = [option for option in options if FORCED.fullmatch(option)]
+        other = [option for option in options if not FORCED.fullmatch(option) and not SAFE_OPTIONS.fullmatch(option)]
+        if 'restrict' not in options or len(forced) != 1 or other or not re.match(r'(ssh-|ecdsa-|sk-)', rest):
+            problems.append(f'authorized_keys line {number}: needs exactly restrict, one '
+                            f'command="/usr/local/bin/bench-agent-shell CLIENT" and only no-*/from=/expiry-time= options')
+    return problems
+
+
+def private_serial_logs(directory='/var/lib/bench/serial'):
+    """Logs written before the unit's UMask=0027 were world-readable: drop the other bits."""
+    for log in Path(directory).glob('SLOT*.log*'):
+        if log.is_file() and not log.is_symlink() and log.stat().st_mode & 0o007:
+            os.chmod(log, log.stat().st_mode & 0o770, follow_symlinks=False)
+
+
 def check_install():
     drift = []
     def bad(message):
@@ -117,7 +166,12 @@ def check_install():
                     bad('wbagent password lock')
                 key = Path(account.pw_dir) / '.ssh/authorized_keys'
                 if not key.is_file() or key.is_symlink() or key.stat().st_mode & 0o777 != 0o600 or key.stat().st_uid != account.pw_uid:
-                    bad('authorized_keys existence/permissions (contents unmanaged)')
+                    bad('authorized_keys existence/permissions')
+                else:
+                    # wbagent's login shell is real (sshd runs the forced command through it), so
+                    # a key without the forced command would be a full shell on the bench.
+                    for problem in audit_authorized_keys(key.read_text()):
+                        bad(problem)
         except KeyError:
             bad('user ' + user)
     info = None
@@ -233,6 +287,7 @@ def install():
         put(name, data, mode)
     run('/usr/sbin/sshd', '-t')
     run('systemd-tmpfiles', '--create', '/etc/tmpfiles.d/bench.conf', '/etc/tmpfiles.d/bench-slots.conf')
+    private_serial_logs()
     desired = {f'bench-serial@{slot}.service' for slot in slots}
     if os.environ.get('BENCH_NO_SYSTEMD') == '1':
         for unit in sorted(desired | {'bench-health.timer'}):

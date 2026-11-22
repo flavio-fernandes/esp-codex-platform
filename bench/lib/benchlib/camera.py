@@ -11,6 +11,7 @@ held for the whole capture. Exit codes: 0 ok, 1 v4l2-ctl failed, 2 usage or no c
 3 camera timeout, 4 truncated JPEG (no FF D9 end marker, after one retry), 65 camera busy.
 """
 import json
+import math
 import os
 import re
 import signal
@@ -43,9 +44,12 @@ def log(message):
 def seconds_env(name, default):
     """Timeouts are overridable from the environment, as for the flash tools."""
     try:
-        return float(os.environ.get(name, default))
+        value = float(os.environ.get(name, default))
     except ValueError:
-        raise Failed(USAGE, f"{name} must be a number of seconds") from None
+        value = math.nan
+    if not math.isfinite(value) or value < 0:   # nan/inf would disable the timeout
+        raise Failed(USAGE, f"{name} must be a finite nonnegative number of seconds")
+    return value
 
 
 def settings():

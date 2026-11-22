@@ -1,5 +1,6 @@
 import json
 import multiprocessing as mp
+import os
 from pathlib import Path
 import pytest
 from benchlib import config, usbdev, locks, holds, history
@@ -176,6 +177,44 @@ def test_hold_atomic_failure(monkeypatch):
     with pytest.raises(OSError):
         holds.put("SLOT1", "client-a", 2, "new")
     assert holds.get("SLOT1") == original
+
+
+def _plant(roots, kind, tmp_path):
+    """A hold file a bench-group member could plant in the group-writable holds directory."""
+    path = roots["state"] / "holds" / "SLOT1.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if kind == "symlink":
+        secret = tmp_path / "root-only.json"
+        secret.write_text('{"client": "TOPSECRET", "reason": "TOPSECRET", "since": 1, "until": 9e99}')
+        path.symlink_to(secret)
+    elif kind == "fifo":
+        os.mkfifo(path)        # a blocking open would hang the root helper forever
+    elif kind == "huge":
+        path.write_text(" " * (holds.MAX_BYTES + 1))
+    elif kind == "garbage":
+        path.write_text("not json")
+    elif kind == "bad-until":
+        path.write_text('{"client": "x", "reason": "r", "since": 1, "until": "soon"}')
+    elif kind == "list":
+        path.write_text("[1, 2]")
+
+
+@pytest.mark.parametrize("kind", ["symlink", "fifo", "huge", "garbage", "bad-until", "list"])
+def test_unreadable_hold_fails_closed_without_echoing_it(roots, tmp_path, kind):
+    _plant(roots, kind, tmp_path)
+    hold = holds.get("SLOT1")
+    assert hold["unreadable"] and "TOPSECRET" not in json.dumps(hold)
+    for client in ("client-a", "client-b"):
+        with pytest.raises(holds.Held, match="unreadable hold file") as exc:
+            holds.check("SLOT1", client)
+        assert "TOPSECRET" not in str(exc.value)
+    with pytest.raises(holds.Held):
+        holds.put("SLOT1", "client-a", 5, "over a bad file")
+    json.dumps(hold, allow_nan=False)          # health.json can still publish it
+    assert holds.release("SLOT1", "client-b")  # anyone may clear an unreadable hold
+    assert holds.get("SLOT1") is None
+    if kind == "symlink":
+        assert (tmp_path / "root-only.json").exists()   # unlinked the link, not its target
 
 
 def _history_writer(client, barrier):

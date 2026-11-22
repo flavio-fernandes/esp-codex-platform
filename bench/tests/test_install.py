@@ -59,6 +59,58 @@ def test_serial_unit_contract():
     for line in ('User=bench', 'Group=bench', 'SupplementaryGroups=dialout plugdev',
                  'ExecStart=/usr/local/bin/bench-serial %i', 'Restart=always', 'RestartSec=2',
                  'NoNewPrivileges=yes', 'ProtectSystem=strict',
-                 'ReadWritePaths=/run/bench /var/lib/bench', 'PrivateTmp=yes'):
+                 'ReadWritePaths=/run/bench /var/lib/bench', 'PrivateTmp=yes', 'UMask=0027'):
         assert line in unit.splitlines()
     assert 'RuntimeDirectory=' not in unit
+
+
+KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExample comment"
+SHELL = 'command="/usr/local/bin/bench-agent-shell claude"'
+
+
+@pytest.mark.parametrize("line", [
+    f"restrict,{SHELL} {KEY}",
+    f'restrict,from="192.0.2.10,192.0.2.11",{SHELL} {KEY}',
+    f'restrict,no-pty,expiry-time="20300101",{SHELL} {KEY}',
+    "# a comment", "",
+])
+def test_authorized_keys_audit_accepts_forced_restricted_keys(line):
+    assert installer.audit_authorized_keys(line) == []
+
+
+@pytest.mark.parametrize("line", [
+    KEY,                                                      # no options: a full shell
+    f"{SHELL} {KEY}",                                         # no restrict: forwarding, pty
+    f"restrict {KEY}",                                        # no forced command
+    f'restrict,command="/bin/bash" {KEY}',                    # another command
+    f'restrict,command="/usr/local/bin/bench-agent-shell claude; sh" {KEY}',
+    f"restrict,pty,{SHELL} {KEY}",                            # re-enables a feature
+    f'restrict,permitopen="localhost:22",{SHELL} {KEY}',
+    f"restrict,{SHELL},{SHELL} {KEY}",
+    f'restrict,environment="BENCH_ETC=/tmp",{SHELL} {KEY}',
+])
+def test_authorized_keys_audit_flags_bypasses_without_echoing_keys(line):
+    problems = installer.audit_authorized_keys("# ok\n" + line)
+    assert len(problems) == 1 and problems[0].startswith("authorized_keys line 2:")
+    assert "AAAA" not in problems[0]
+
+
+def test_sshd_dropin_disables_all_forwarding():
+    text = (Path(__file__).parents[1] / "sshd/50-bench-agent.conf").read_text()
+    for directive in ("DisableForwarding yes", "AllowStreamLocalForwarding no", "PermitTTY no"):
+        assert directive in text
+
+
+def test_private_serial_logs_drops_other_bits_and_skips_links(tmp_path):
+    old, kept = tmp_path / "SLOT1.log", tmp_path / "SLOT2.log.1"
+    old.write_text("boot\n")
+    old.chmod(0o644)
+    kept.write_text("x\n")
+    kept.chmod(0o640)
+    target = tmp_path / "elsewhere"
+    target.write_text("not a log\n")
+    target.chmod(0o644)
+    (tmp_path / "SLOT3.log").symlink_to(target)
+    installer.private_serial_logs(tmp_path)
+    assert old.stat().st_mode & 0o777 == 0o640 and kept.stat().st_mode & 0o777 == 0o640
+    assert target.stat().st_mode & 0o777 == 0o644

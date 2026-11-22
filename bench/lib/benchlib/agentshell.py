@@ -223,7 +223,9 @@ class Shell:
             except (serialclient.ProtocolError, OSError, ValueError) as exc:
                 fields.append(f"serial=error({audit_text(str(exc), 60)})")
             hold = holds.get(label)
-            if hold:
+            if hold and hold.get("unreadable"):
+                fields.append(f"hold=UNREADABLE reason=[{hold['reason']}]")
+            elif hold:
                 until = datetime.fromtimestamp(hold["until"], timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 fields.append(f"hold={hold['client']} until={until} reason=[{hold['reason']}]")
             else:
@@ -319,8 +321,8 @@ class Shell:
             holds.check(slot, self.client)
         except holds.Held as exc:
             raise Refuse(HELD, f"{slot} {exc}") from None
-        except (OSError, ValueError, KeyError) as exc:
-            raise Refuse(FAILED, f"{slot}: unreadable hold: {exc}") from None
+        except (OSError, ValueError) as exc:
+            raise Refuse(FAILED, f"{slot}: hold check failed: {exc}") from None
 
     def v_reset(self, words):
         self.arity(words, 1, 1, "reset SLOTn")

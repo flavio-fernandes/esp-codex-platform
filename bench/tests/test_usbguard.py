@@ -224,6 +224,16 @@ def test_power_cycle_own_hold_does_not_block(hub):
     assert usbguard.main(["power-cycle"]) == 0
 
 
+def test_planted_fifo_hold_refuses_instead_of_hanging_the_root_helper(hub, roots, capsys):
+    path = roots["state"] / "holds" / "SLOT1.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    os.mkfifo(path)
+    assert usbguard.main(["usb-reset", "SLOT1"]) == 69
+    assert "unreadable hold file" in capsys.readouterr().err
+    assert hub.untouched()
+    assert usbguard.main(["power-cycle"]) == 69 and hub.untouched()
+
+
 def test_root_ignores_bench_path_overrides(monkeypatch):
     monkeypatch.setattr(usbguard.os, "geteuid", lambda: 0)
     monkeypatch.setenv("BENCH_STATE", "/tmp/attacker-chosen")

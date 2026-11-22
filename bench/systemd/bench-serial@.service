@@ -13,6 +13,8 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 ReadWritePaths=/run/bench /var/lib/bench
 PrivateTmp=yes
+# Serial logs hold device output (SSIDs, IPs): not world-readable.
+UMask=0027
 
 [Install]
 WantedBy=multi-user.target

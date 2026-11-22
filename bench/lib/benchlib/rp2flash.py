@@ -52,6 +52,10 @@ def waits():
         if not math.isfinite(value) or value < 0:
             raise Failed(USAGE, f"{name} must be a finite nonnegative number of seconds")
         result[name] = value
+    raw = os.environ.get("BENCH_RP2_FLASH_BYTES")
+    if raw is not None and not (raw.isascii() and raw.isdigit() and 0 < int(raw) <= 1 << 28):
+        raise Failed(USAGE, "BENCH_RP2_FLASH_BYTES must be a whole number of bytes (at most 256 MiB)")
+    result["BENCH_RP2_FLASH_BYTES"] = int(raw) if raw is not None else None
     return result
 
 
@@ -233,8 +237,7 @@ class Operation:
         if self.action == "save" and rc != 0 and "Cannot determine the flash size" in output:
             # A blank board has no binary info, so picotool cannot size the flash. Save the chip's
             # standard flash range instead (override with BENCH_RP2_FLASH_BYTES) and say so.
-            size = int(os.environ.get("BENCH_RP2_FLASH_BYTES") or
-                       (4 << 20 if boot["pid"] == "000f" else 2 << 20))
+            size = self.limits["BENCH_RP2_FLASH_BYTES"] or (4 << 20 if boot["pid"] == "000f" else 2 << 20)
             self.note(f"flash size unknown (no binary info): saving the standard {size >> 20} MiB range")
             args = ["save", "-r", "0x10000000", hex(0x10000000 + size), self.file] + location(boot)
             rc, output = picotool(args, self.limits["BENCH_RP2_PICOTOOL_TIMEOUT"], sys.stderr)
