@@ -44,7 +44,8 @@ class FakeDevice:
                 else:
                     self.out += improv.packet(improv.TYPE_STATE, bytes([improv.STATE_PROVISIONED]))
                     url = self.url.encode()
-                    self.out += improv.packet(improv.TYPE_RESULT, bytes([improv.CMD_WIFI, len(url) + 1, len(url)]) + url)
+                    body = bytes([len(url)]) + url if url else b""
+                    self.out += improv.packet(improv.TYPE_RESULT, bytes([improv.CMD_WIFI, len(body)]) + body)
         return len(data)
 
     def flush(self):
@@ -167,3 +168,17 @@ def test_main_refusals(roots, slot, capsys):
     assert "b\n" not in out
     rows = history_rows(roots)
     assert [r["rc"] for r in rows] == [2, 66, 69, 65]   # argv usage errors are not recorded
+
+
+def test_provision_without_url_takes_ip_from_the_log():
+    clock = FakeClock()
+    device = FakeDevice(clock=clock, url="")
+    real_write = device.write
+
+    def write(data):
+        n = real_write(data)
+        if improv.Reader().feed(bytes(data))[0][1][0] == improv.CMD_WIFI:
+            device.out[:0] = b"[C][wifi:1461]:   IP Address: 192.0.2.77\r\n"
+        return n
+    device.write = write
+    assert improv.provision(device, SSID, PASSWORD, clock=clock)["urls"] == ["http://192.0.2.77"]

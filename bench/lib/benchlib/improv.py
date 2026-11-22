@@ -10,7 +10,10 @@ RPC data: command (1) | length (1) | payload. Command 0x01 sends Wi-Fi settings
 (ssid length, ssid, password length, password); 0x02 requests the current state.
 The device's log output is interleaved with packets, so the reader scans for the header.
 """
+import re
 import time
+
+IP_LOG = re.compile(rb"IP Address: *([0-9]{1,3}(?:\.[0-9]{1,3}){3})")
 
 HEADER = b"IMPROV"
 VERSION = 1
@@ -59,6 +62,12 @@ class Reader:
 
     def __init__(self):
         self.buf = bytearray()
+        self.text = bytearray()   # tail of the log text around the packets (ESPHome logs its IP)
+
+    def _skip(self, n):
+        self.text += self.buf[:n]
+        del self.text[:max(0, len(self.text) - 4096)]
+        del self.buf[:n]
 
     def feed(self, data):
         self.buf += data
@@ -66,11 +75,11 @@ class Reader:
         while True:
             start = self.buf.find(HEADER)
             if start < 0:
-                del self.buf[:max(0, len(self.buf) - len(HEADER) + 1)]
+                self._skip(max(0, len(self.buf) - len(HEADER) + 1))
                 return packets
-            del self.buf[:start]
+            self._skip(start)
             if len(self.buf) >= 8 and (self.buf[6] != VERSION or not TYPE_STATE <= self.buf[7] <= TYPE_RESULT):
-                del self.buf[:1]   # "IMPROV" in log text: don't wait on its bogus length byte
+                self._skip(1)   # "IMPROV" in log text: don't wait on its bogus length byte
                 continue
             if len(self.buf) < 9:
                 return packets
@@ -83,7 +92,7 @@ class Reader:
                 packets.append((frame[7], frame[9:9 + length]))
                 del self.buf[:end]
             else:
-                del self.buf[:1]   # not a real packet: keep scanning past this header
+                self._skip(1)   # not a real packet: keep scanning past this header
 
 
 def provision(port, ssid, password, timeout=45.0, log=lambda _m: None, clock=time.monotonic):
@@ -125,15 +134,18 @@ def provision(port, ssid, password, timeout=45.0, log=lambda _m: None, clock=tim
             result["state"] = STATES.get(data[0], hex(data[0]))
             log(f"device improv state: {result['state']}")
         if ptype == TYPE_RESULT and data and data[0] == CMD_WIFI:
-            result["urls"] = strings(data[2:2 + data[1]])
+            result["urls"] = [u for u in strings(data[2:2 + data[1]]) if u]
             return result
         if ptype == TYPE_STATE and data and data[0] == STATE_PROVISIONED and result["urls"]:
             return result
         return None
 
     done = packets_until(watch, timeout)
-    if done is None:
-        if result["state"] == "provisioned":
-            return result
+    if done is None and result["state"] != "provisioned":
         raise ImprovError(f"timed out after {timeout:g}s waiting for the device to join (last state: {result['state']})")
-    return done
+    if not result["urls"]:   # ESPHome sends a URL only with web_server: take the IP from its log
+        packets_until(lambda t, d: None, 0.0 if IP_LOG.search(reader.text) else 3.0)
+        found = IP_LOG.findall(bytes(reader.text))
+        if found:
+            result["urls"] = [f"http://{found[-1].decode()}"]
+    return result
