@@ -69,7 +69,17 @@ boot. Repeated nonce/counter lines make future-only `serial-wait` useful. This
 plain Pico hello proves serial/LED operation only; for a display board add the
 same nonce to the display and inspect a photo before claiming display proof.
 
-AWTRIX hello: **see W14's patch, kept in
-references/awtrix-hello-main-picow.patch**. That patch is added after W14; it is
-intentionally not present yet. Do not apply the archived 1.2.1-tree hello patch
-to a newer source tree or substitute an old firmware binary.
+AWTRIX hello (Galactic Unicorn): `references/awtrix-hello-main-picow.patch`
+applies to awtrix-ng `main-picow` (verified at a0d1df1, 2026-11-22, on a
+Pico 2 W Unicorn). Build with `-DAWTRIX_BENCH_HELLO=<NONCE>`. It shows `HI <NONCE>`
+for 10 s, then solid red, green and blue for 4 s each, printing
+`BENCH_HELLO <NONCE> phase=<name>` every second. Build the repo's container from the
+repo root (`podman build --file tools/container/Containerfile .`). Do not apply the
+archived 1.2.1-tree hello patch to a newer tree.
+
+Colour proof with `snap-stats`: count a colour when `lit_fraction >= 0.15` and
+`purity >= 0.40`. With this camera green reads about 0.44; the lit floor alone keeps
+the dim white text phase (lit ~0.02) from counting as blue.
+
+Whole-flash backups (`pico-save`) carry Wi-Fi credentials. On shared benches the
+operator, not an automated worker, takes and restores them.
