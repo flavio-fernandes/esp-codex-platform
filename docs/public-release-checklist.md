@@ -14,7 +14,7 @@ rg -n '<private-lan-regex>|<secret-regex>'
 
 Confirm that tracked files do not include:
 
-- `config/workbench.env`
+- `config/bench.env` or legacy `config/workbench.env`
 - `secrets.yaml`
 - `.env` or `.env.*`
 - private keys, tokens, passwords, or certificates
@@ -25,5 +25,7 @@ Confirm that tracked files do not include:
 - project-specific hardware notes, photos, screenshots, or Home Assistant
   entities that do not belong in a generic public starter
 
-Local setup values belong in ignored files such as `config/workbench.env`.
-Committed docs should use placeholders like `192.0.2.10`.
+Local setup values belong in ignored files such as `config/bench.env`.
+Committed docs should use placeholders like `<bench-ip>`.
+Keep private serial logs, flash history, camera evidence and binary backups out
+of published commits too. Review historical material before publication.

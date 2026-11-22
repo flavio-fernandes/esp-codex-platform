@@ -1,25 +1,104 @@
 #!/usr/bin/env bash
-
-load_workbench_env() {
-  local config_file="${ESPWB_CONFIG_FILE:-config/workbench.env}"
-  local name
-  declare -A explicit_env=()
-
-  for name in "$@"; do
-    if [[ ${!name+x} ]]; then
-      explicit_env["$name"]="${!name}"
-    fi
-  done
-
+# Client configuration and one-release compatibility adapter.
+load_bench_env() {
+  local name target config_file root
+  local -A explicit_env=()
+  root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+  while IFS= read -r name; do
+    case "$name" in BENCH_*|WORKBENCH_*|ESPWB_*|STATIC_ONLY|ALLOW_NON_SLOT1|SSH_CONFIG)
+      explicit_env["$name"]="${!name}" ;;
+    esac
+  done < <(compgen -v)
+  config_file="${BENCH_CONFIG_FILE:-${ESPWB_CONFIG_FILE:-$root/config/bench.env}}"
+  if [[ ! -e "$config_file" && -z "${BENCH_CONFIG_FILE+x}${ESPWB_CONFIG_FILE+x}" && -r "$root/config/workbench.env" ]]; then
+    config_file="$root/config/workbench.env"
+    printf 'deprecated: config/workbench.env; use config/bench.env\n' >&2
+  fi
   if [[ -r "$config_file" ]]; then
-    set -a
+    # Trusted local shell configuration, never a remote file.
     # shellcheck disable=SC1090
     source "$config_file"
-    set +a
   fi
-
   for name in "${!explicit_env[@]}"; do
     printf -v "$name" '%s' "${explicit_env[$name]}"
-    declare -gx "$name"
   done
+  while IFS= read -r name; do
+    case "$name" in
+      WORKBENCH_AGENT_HOST|ESPWB_AGENT_HOST) target=BENCH_AGENT ;;
+      WORKBENCH_*|ESPWB_*) target="BENCH_${name#*_}" ;;
+      STATIC_ONLY) target=BENCH_STATIC_ONLY ;;
+      ALLOW_NON_SLOT1) target=BENCH_ALLOW_NON_SLOT1 ;;
+      SSH_CONFIG) target=BENCH_SSH_CONFIG ;;
+      *) continue ;;
+    esac
+    case "$target" in
+      BENCH_AGENT|BENCH_IP|BENCH_SLOT|BENCH_CONFIG_FILE|BENCH_SSH_KEY|BENCH_KNOWN_HOSTS|BENCH_SSH_CONFIG|BENCH_SSH_CONNECT_TIMEOUT|BENCH_SSH_SERVER_ALIVE_INTERVAL|BENCH_SSH_SERVER_ALIVE_COUNT_MAX|BENCH_MONITOR_MAX_TIME|BENCH_CAMERA_WIDTH|BENCH_CAMERA_HEIGHT|BENCH_CAMERA_SKIP|BENCH_CAMERA_EXPOSURE|BENCH_STATIC_ONLY|BENCH_ALLOW_NON_SLOT1)
+        printf 'deprecated: %s; use %s\n' "$name" "$target" >&2
+        # An explicit old name beats file defaults, but an explicit new name wins.
+        if [[ ! ${!target+x} || ( ${explicit_env[$name]+yes} && ! ${explicit_env[$target]+yes} ) ]]; then
+          printf -v "$target" '%s' "${!name}"
+        fi ;;
+      *) printf 'deprecated: %s is retired and ignored; see config/README.md\n' "$name" >&2 ;;
+    esac
+  done < <(compgen -v)
+  BENCH_AGENT="${BENCH_AGENT:-${BENCH_IP:+wbagent@${BENCH_IP}}}"
+  BENCH_AGENT="${BENCH_AGENT:-bench-agent}"
+  BENCH_SLOT="${BENCH_SLOT:-SLOT1}"
+}
+
+# Kept for downstream scripts for one release.
+load_workbench_env() { load_bench_env; }
+
+bench_ssh() {
+  local command="$*" rc
+  local -a options=(-o BatchMode=yes -o StrictHostKeyChecking=yes
+    -o "ConnectTimeout=${BENCH_SSH_CONNECT_TIMEOUT:-10}"
+    -o "ServerAliveInterval=${BENCH_SSH_SERVER_ALIVE_INTERVAL:-5}"
+    -o "ServerAliveCountMax=${BENCH_SSH_SERVER_ALIVE_COUNT_MAX:-2}")
+  [[ -n "${BENCH_SSH_KEY:-}" ]] && options+=(-i "$BENCH_SSH_KEY")
+  [[ -n "${BENCH_KNOWN_HOSTS:-}" ]] && options+=(-o "UserKnownHostsFile=$BENCH_KNOWN_HOSTS")
+  [[ -n "${BENCH_SSH_CONFIG:-}" ]] && options+=(-F "$BENCH_SSH_CONFIG")
+  if [[ ! "$BENCH_AGENT" =~ ^[A-Za-z0-9_][A-Za-z0-9_.@:-]*$ || ${#command} -gt 400 || "$command" == -* || "$command" == *[!A-Za-z0-9\ _.:=,/#@+-]* ]]; then
+    printf 'invalid bench destination or command alphabet/length\n' >&2
+    return 2
+  fi
+  # Restricted whitespace protocol, intentionally not shell-quoted on the wire.
+  # shellcheck disable=SC2029
+  if ssh "${options[@]}" -- "$BENCH_AGENT" "$@"; then return 0; else rc=$?; fi
+  if ((rc == 255)); then printf 'OFF: SSH unavailable (check connectivity/authentication)\n' >&2; fi
+  return "$rc"
+}
+
+bench_slot() {
+  [[ "$BENCH_SLOT" =~ ^SLOT[0-9]+$ ]] || { printf 'invalid BENCH_SLOT\n' >&2; return 2; }
+  if [[ "$BENCH_SLOT" != SLOT1 && "${BENCH_ALLOW_NON_SLOT1:-0}" != 1 ]]; then
+    printf 'Only SLOT1 is enabled by default; explicitly approve with BENCH_ALLOW_NON_SLOT1=1\n' >&2
+    return 2
+  fi
+}
+
+# Atomic private download: failed SSH never truncates an existing backup/photo.
+bench_download() (
+  local out="$1" tmp rc
+  shift
+  umask 077
+  mkdir -p -- "$(dirname -- "$out")"
+  tmp="$(mktemp "${out}.part.XXXXXX")"
+  trap 'rm -f -- "$tmp"' EXIT
+  if bench_ssh "$@" > "$tmp"; then
+    mv -- "$tmp" "$out"
+  else
+    rc=$?
+    return "$rc"
+  fi
+)
+
+bench_camera_options() {
+  BENCH_CAMERA_OPTIONS=()
+  [[ -n "${BENCH_CAMERA_EXPOSURE:-}" ]] && BENCH_CAMERA_OPTIONS+=("exposure=$BENCH_CAMERA_EXPOSURE")
+  if [[ -n "${BENCH_CAMERA_WIDTH:-}${BENCH_CAMERA_HEIGHT:-}" ]]; then
+    BENCH_CAMERA_OPTIONS+=("res=${BENCH_CAMERA_WIDTH:-1280}x${BENCH_CAMERA_HEIGHT:-720}")
+  fi
+  [[ -n "${BENCH_CAMERA_SKIP:-}" ]] && BENCH_CAMERA_OPTIONS+=("skip=$BENCH_CAMERA_SKIP")
+  return 0
 }

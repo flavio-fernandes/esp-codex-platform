@@ -1,3 +1,6 @@
+> Historical: the Pi 3 + rfc2217-portal bench, retired 2026-11. See
+> [docs/bench-build-from-scratch.md](../bench-build-from-scratch.md).
+
 # Workbench Cheat Sheet
 
 ## Required Assumptions

@@ -1,6 +1,6 @@
 # Examples
 
-These are tiny ESPHome smoke tests for proving the devcontainer, workbench, and
+These are tiny ESPHome smoke tests for proving the devcontainer, bench, and
 flashing path.
 
 - `generic-blink/` toggles one GPIO output.
@@ -15,7 +15,8 @@ flashing path.
 
 Before compiling or flashing the generic examples, edit the `board`, `flash_size`,
 and `status_led_pin` substitutions at the top of the YAML so they match the
-board installed in your workbench slot. Always confirm the physical board
+board installed in your bench slot. Hold the approved slot for the entire job
+(see `docs/bench-cheatsheet.md`) and release it afterward. Always confirm the physical board
 identity first with:
 
 ```bash

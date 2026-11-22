@@ -5,7 +5,7 @@ sequence in tools/workbench-local-esptool for native-USB boards (esp-usb): the t
 re-resolved at the slot's port path before every esptool run, because a reset makes the
 board re-enumerate (possibly under a new ttyACM name); a failed run waits for the board to
 come back and retries with --before no-reset (3 attempts), the last one without the stub.
-RFC2217 is never used: esptool talks to the local tty only.
+esptool talks to the local tty only, never through a network serial proxy.
 """
 from contextlib import ExitStack
 import getpass

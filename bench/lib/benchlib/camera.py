@@ -1,4 +1,4 @@
-"""bench-camera: evidence photos from the bench UVC camera (port of workbench/bin/wb-camera).
+"""bench-camera: evidence photos from the bench UVC camera (legacy source in docs/history).
 
   bench-camera snap  OUT.jpg [exposure=auto|N] [res=WxH] [skip=N]
   bench-camera burst OUTDIR COUNT [exposure=auto|N] [res=WxH] [skip=N]
@@ -147,7 +147,7 @@ def complete_jpeg(data):
 
 
 def split_frames(data):
-    """Split an MJPG stream on SOI/EOI markers (as wb-camera did)."""
+    """Split an MJPG stream on SOI/EOI markers, preserving the legacy behavior."""
     frames, pos = [], 0
     while (start := data.find(SOI, pos)) >= 0:
         end = data.find(EOI, start + 2)

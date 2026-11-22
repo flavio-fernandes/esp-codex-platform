@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Historical: superseded by bench/; do not install on a current host.
 set -euo pipefail
 
 RAW_SLOT="${1:-SLOT1}"

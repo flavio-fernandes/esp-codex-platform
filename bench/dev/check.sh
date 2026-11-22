@@ -24,7 +24,14 @@ if [[ -d bench/bin ]]; then
         fi
     done
 fi
-if "$repo/bench/.venv/bin/shellcheck" "${scripts[@]}"; then
+for file in tools/* tools/lib/*; do
+    [[ -f "$file" ]] || continue
+    IFS= read -r first < "$file" || true
+    if [[ "$first" =~ ^\#!.*(^|[/[:space:]])(ba|da|k|z)?sh([[:space:]]|$) ]]; then
+        scripts+=("$file")
+    fi
+done
+if "$repo/bench/.venv/bin/shellcheck" -x "${scripts[@]}"; then
     printf 'PASS shellcheck (%s scripts)\n' "${#scripts[@]}"
 else
     printf 'FAIL shellcheck\n'

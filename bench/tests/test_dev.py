@@ -29,6 +29,11 @@ def test_check_runner(tmp_path, pytest_rc, shellcheck_rc):
                        "python": "#!/usr/bin/env python3\n", "other.sh": "#!/bin/bash\n"}.items():
         (bins / name).write_text(text)
     (dev / "extra.sh").write_text("#!/bin/bash\n")
+    clients = repo / "tools"
+    (clients / "lib").mkdir(parents=True)
+    (clients / "wb").write_text("#!/usr/bin/env bash\n")
+    (clients / "lib/workbench-env").write_text("#!/usr/bin/env bash\n")
+    (clients / "README.md").write_text("Not a shell script\n")
     args_file = tmp_path / "args"
     env = {**os.environ, "TEST_PYTEST_RC": str(pytest_rc),
            "TEST_SHELLCHECK_RC": str(shellcheck_rc), "TEST_ARGS": str(args_file)}
@@ -40,4 +45,4 @@ def test_check_runner(tmp_path, pytest_rc, shellcheck_rc):
     assert ("FAIL shellcheck" if shellcheck_rc else "PASS shellcheck") in result.stdout
     assert set(args_file.read_text().splitlines()) == {
         "bench/dev/check.sh", "bench/dev/extra.sh", "bench/bin/other.sh",
-        "bench/bin/shell", "bench/bin/bash"}
+        "bench/bin/shell", "bench/bin/bash", "-x", "tools/wb", "tools/lib/workbench-env"}

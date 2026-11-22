@@ -1,5 +1,5 @@
 {
-  "name": "ESPHome workbench",
+  "name": "ESPHome bench",
   "build": {
     "dockerfile": "Dockerfile",
     "args": {
@@ -13,8 +13,6 @@
   "remoteUser": "vscode",
   "updateRemoteUserUID": false,
   "containerEnv": {
-    "WORKBENCH_USER": "pi",
-    "ESPWB_SLOT": "SLOT1",
     "PLATFORMIO_CORE_DIR": "/cache/platformio",
     "PIP_CACHE_DIR": "/cache/pip"
   },

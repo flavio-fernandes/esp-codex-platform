@@ -2,8 +2,8 @@
 
 This is the shared contract for the `bench/` tree. Every component and every card builds to it.
 If a card needs to change it, the card changes this file in the same commit and says why in its
-handoff. It replaces `workbench/` (the Pi 3 + upstream rfc2217-portal setup), which stays in the
-repo as history until the migration is finished.
+handoff. The retired Pi 3 setup is archived under `docs/history/`; see that directory
+for provenance. Current operation is described in `docs/bench-build-from-scratch.md`.
 
 ## Why it exists (the failures it is built to remove)
 
@@ -12,9 +12,9 @@ repo as history until the migration is finished.
 | Slots renumbered by boot timing; the webcam became a phantom slot | Slots are fixed USB **port paths** in `slots.conf`; a port with no entry is ignored |
 | Slot role (pico vs esp) edited by hand in `agent.env` | Board **kind is detected** from the device's VID:PID each time |
 | Upstream proxy holds DTR low, so RP2 output is silently empty (needed a holder service) | `bench-serial` sets the modem lines **per kind** |
-| One RFC2217 client per slot; `stop` stopped every slot; "running" said before the port listened | One owner process per slot, a local socket with many readers; flashing **pauses only its own slot** |
+| One legacy monitor client per slot; `stop` stopped every slot; readiness was premature | One owner process per slot, a local socket with many readers; flashing **pauses only its own slot** |
 | Boot lines lost after a re-attach (proxy restart churn) | `bench-serial` reopens the tty within ~100 ms of the device appearing |
-| Closing an RFC2217 monitor wedged the ESP32-S3 in ROM | No RFC2217. Native-USB ESP slots are not opened unless configured |
+| Closing a legacy network monitor wedged the ESP32-S3 in ROM | Local serial ownership. Native-USB ESP slots are not opened unless configured |
 | `snap` could hang forever | Every external call has a timeout |
 | Logs lost on reboot; HANDOFF.md and the bench disagreed | Persistent journal, per-slot serial log on disk, `flash-history.jsonl` |
 | "Bench off" looked like "bench broken" | `bench-health` publishes one verdict; clients report OFF (no SSH) separately from DEGRADED |
@@ -173,7 +173,7 @@ Details fixed by the implementation (`benchlib.rp2flash`):
 - `info` output is data on stdout; `save`/`load` picotool output goes to stderr, without progress
   bars. The result line `first-line: <text>` (or `first-line: (no output yet)`) is on stdout.
 - After `info`, `save`, or a failed picotool call, a board still in BOOTSEL at the path gets
-  `picotool reboot --bus B --address A` (as `wb-pico-flash` did). 68 wins over 71.
+  `picotool reboot --bus B --address A` (preserving the archived helper's behavior). 68 wins over 71.
 - Timeouts in seconds, overridable from the environment: `BENCH_RP2_BOOTSEL_WAIT` (10, each
   poll), `BENCH_RP2_APP_WAIT` (30), `BENCH_RP2_OPEN_WAIT` (15), `BENCH_RP2_LINE_WAIT` (5, first
   line after the reopen), `BENCH_RP2_PICOTOOL_TIMEOUT` (300), `BENCH_RP2_REBOOT_TIMEOUT` (20).
@@ -183,7 +183,7 @@ Details fixed by the implementation (`benchlib.rp2flash`):
 - Identity runs first on every write.
 - `--after hard-reset`.
 - Kinds `esp-uart` and `esp-usb`. For `esp-usb`, port the reset-aware sequence and the S3 ROM
-  recovery from `tools/workbench-local-esptool`.
+  recovery from `docs/history/workbench-local-esptool`.
 - Same lock, hold, history and exit codes. 68 means esptool failed.
 
 Details fixed by the implementation (`benchlib.espflash`):
@@ -199,7 +199,7 @@ Details fixed by the implementation (`benchlib.espflash`):
   SIZE reads the detected size, or `ALL` when no size was detected.
 - `chip-id`/`flash-id` output is data on stdout. Read/write esptool output goes to stderr without
   progress lines; `read N bytes to OUT` and, after a write, `first-line: ..` are on stdout.
-- esp-usb (port of `tools/workbench-local-esptool`): the tty is re-resolved at the port path before
+- esp-usb (port of `docs/history/workbench-local-esptool`): the tty is re-resolved at the port path before
   every esptool run, waiting up to `BENCH_ESP_REENUM_WAIT` (12) for a re-enumerating board. A failed
   run waits for the board to reappear at the path, sleeps 1 s and retries with `--before no-reset`:
   at most `BENCH_ESP_ATTEMPTS` (3) runs per step, the last one with `--no-stub`. After the operation
@@ -245,7 +245,7 @@ Details fixed by the implementation (`benchlib.usbguard`, `bench/sbin/bench-usb`
 
 ## `bench-camera snap|stats|burst`
 
-- Port of `workbench/bin/wb-camera`: MJPG, manual exposure via v4l2-ctl. The default `exposure`
+- Preserves the archived camera helper's MJPG, manual exposure via v4l2-ctl. The default `exposure`
   comes from `bench.env`.
 - Every v4l2-ctl call runs under `timeout`. Total `snap` ≤ 20 s.
 - `camera.lock` is held for the whole capture.
@@ -312,7 +312,7 @@ signal, not a replacement for taking operation locks.
 
 ## `bench-agent-shell CLIENT` (forced command for `wbagent`)
 
-- Same input rules as the old `wb-agent-shell`:
+- Same input rules as the archived agent shell:
   - `SSH_ORIGINAL_COMMAND` ≤ 400 chars, alphabet `[A-Za-z0-9 _.:=,/#@+-]`;
   - split on whitespace;
   - first word = verb;

@@ -1,30 +1,29 @@
-# Codex instructions for this workspace
+# Agent instructions for this repository
 
-Scope: this repository only.
+Read `bench/DESIGN.md` before changing bench code. Use the current
+`docs/bench-build-from-scratch.md` and `docs/bench-cheatsheet.md`; material in
+`docs/history/` is not an installation recipe.
 
-Safe things to do:
+Allowed within an assigned task: edit workspace files, add small examples and
+project-local tools, run `bench/dev/setup-venv.sh` and `bench/dev/check.sh`.
+Never install system-wide packages or use sudo without explicit approval.
+Never modify SSH keys, networking, system services or files outside the approved
+workspace. Never push to GitHub without explicit approval.
 
-- Edit files in this workspace.
-- Run commands inside this repo.
-- Add project-local scripts, docs, ESPHome YAML, and devcontainer files.
-- Build or rebuild the devcontainer.
-- Run validation scripts in `tools/`.
-- Use `tools/espwb-esptool` for chip-id, flash-id, read-flash, and write-flash on `SLOT1`.
-- Install small missing developer tools only after asking, limited to packages like `ripgrep`, `jq`, `tree`, `shellcheck`, `git`, `curl`, and `unzip`.
+Hardware requires explicit task approval. Use only `ssh bench-agent <verb>`
+(or `tools/wb`) through the restricted client. No admin login, direct tty opens,
+or ad hoc sysfs recovery. SLOT1 is the wrapper default; other slots need explicit
+approval. Hold every slot for the entire job and release it in cleanup. Do not
+flash from a code-only task.
 
-Do not do these without explicit user approval:
+Use `tools/espwb-esptool` for supported ESP identity/flash/backup operations;
+`tools/espwb-monitor` uses serial-follow and never resets on exit. RP2 flashing
+uses `tools/wb flash-pico SLOTn` with UF2 on stdin. Verify board identity and
+back up unknown boards before writing. Compile the exact image you flash,
+record its hash, prove a fresh application marker and inspect any display photo.
+Do not infer application health from SSH connectivity or a successful write.
 
-- Do not run `sudo`.
-- Do not run `sudo` for Docker, SSH keys, systemd, Tailscale, firewall, `/usr/local/bin`, or workbench service changes.
-- Do not modify files outside this workspace.
-- Do not modify SSH key directories.
-- Do not print, copy, commit, or upload private keys, tokens, passwords, or `secrets.yaml`.
-- Do not push to GitHub.
-- Do not flash slots other than `SLOT1`.
-- Do not use RFC2217 reset control for flashing.
-- Do not create a large hardware-specific ESPHome YAML in one jump.
-
-Important workflow rule:
-
-- RFC2217 is for serial monitor only.
-- Flashing must go through `tools/espwb-esptool`, which calls the reset-aware helper on the workbench.
+Never print, copy into the repository, commit or upload private keys, tokens,
+passwords, `secrets.yaml`, firmware backups or private device identities.
+Keep local configuration in ignored `config/bench.env`. Keep generated artifacts
+and photos untracked. Do not build a large hardware-specific example in one step.

@@ -1,6 +1,6 @@
 """bench-flash-rp2: info, save or load an RP2040/RP2350 board found by USB port path.
 
-Port of workbench/bin/wb-pico-flash onto benchlib. The BOOTSEL device is matched by the
+Port of the archived RP2 flash helper onto benchlib. The BOOTSEL device is matched by the
 slot's port path, never by being the only one. Data goes to stdout (info) or the file
 (save); messages and picotool progress go to stderr.
 """

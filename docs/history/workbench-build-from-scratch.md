@@ -1,3 +1,6 @@
+> Historical: the Pi 3 + rfc2217-portal bench, retired 2026-11. See
+> [docs/bench-build-from-scratch.md](../bench-build-from-scratch.md).
+
 # Workbench: build from scratch (portal, camera, RP2 flashing, agent access)
 
 This is the runbook for rebuilding the **workbench**, the Raspberry Pi that holds the boards,
