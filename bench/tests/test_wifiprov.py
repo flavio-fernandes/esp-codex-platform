@@ -182,3 +182,23 @@ def test_provision_without_url_takes_ip_from_the_log():
         return n
     device.write = write
     assert improv.provision(device, SSID, PASSWORD, clock=clock)["urls"] == ["http://192.0.2.77"]
+
+
+@pytest.mark.parametrize("where", ["open", "read"])
+def test_serial_errors_are_tool_failures_not_tracebacks(roots, slot, monkeypatch, capsys, where):
+    import serial
+
+    class Unplugged(FakeDevice):
+        def read(self, n):
+            raise serial.SerialException("device reports readiness to read but returned no data")
+
+    def failing_open(device, baud, **_kw):
+        if where == "open":
+            raise serial.SerialException("could not open port: [Errno 16] Device or resource busy")
+        return Unplugged()
+
+    monkeypatch.setattr(wifiprov.serialowner, "open_serial", failing_open)
+    assert wifiprov.main(["SLOT1"], stdin=io.StringIO(f"{SSID}\n{PASSWORD}\n")) == 68
+    out, err = capsys.readouterr()
+    assert "serial port error" in err and PASSWORD not in out + err
+    assert history_rows(roots)[-1]["rc"] == 68

@@ -17,6 +17,7 @@ import os
 import sys
 import time
 
+import serial
 from . import config, history, holds, improv, locks, serialclient, serialowner, usbdev
 from .rp2flash import BUSY, HELD, OK, Failed
 
@@ -72,13 +73,15 @@ def run(slot, client, ssid, password, open_port=None, record=None):
                     log(f"bench-serial is not running for {slot}; continuing without a pause")
                 except (serialclient.ProtocolError, OSError) as exc:
                     raise Failed(BUSY, f"bench-serial refused the pause: {exc}") from None
-                port = open_port(device, baud)
-                stack.callback(port.close)
-                port.timeout = 0.2
                 try:
+                    port = open_port(device, baud)
+                    stack.callback(port.close)
+                    port.timeout = 0.2
                     result = improv.provision(port, ssid, password, log=log)
                 except improv.ImprovError as exc:
                     raise Failed(TOOL_FAILED, str(exc)) from None
+                except (OSError, serial.SerialException) as exc:   # busy port, board unplugged
+                    raise Failed(TOOL_FAILED, f"serial port error on {device['tty']}: {exc}") from None
     except locks.Busy:
         raise Failed(BUSY, f"{slot} is busy (another operation holds its lock)") from None
     for url in result["urls"]:
