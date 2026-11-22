@@ -303,8 +303,14 @@ class Shell:
         if len(words) < 2:
             raise Refuse(REFUSED, "usage: serial-write SLOTn TEXT")
         slot, _ = self.slot(words[1])
-        self.check_hold(slot)
-        sent = self.serial(serialclient.write, slot, " ".join(words[2:]))
+        # The slot lock spans the hold check and the write, so no hold can land in between
+        # (holds.put takes the same lock).
+        try:
+            with locks.slot_lock(slot):
+                self.check_hold(slot)
+                sent = self.serial(serialclient.write, slot, " ".join(words[2:]))
+        except locks.Busy:
+            raise Refuse(BUSY, f"{slot} is busy (another operation holds its lock)") from None
         say(f"{slot}: wrote {sent} bytes")
         return OK
 

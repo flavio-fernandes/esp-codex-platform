@@ -384,6 +384,31 @@ def test_serial_write(bench):
     assert stub.requests == [{"op": "write", "text": "led on #1"}]
 
 
+def test_serial_write_busy_is_65(bench):
+    stub = bench.stub("SLOT1")
+    with locks.slot_lock("SLOT1"):
+        assert bench.run("serial-write SLOT1 hi").returncode == 65
+    assert stub.requests == []
+
+
+def test_serial_write_holds_the_slot_lock_so_no_hold_lands_mid_write(bench):
+    """Codex 2026-11-22: a hold placed between the hold check and the write must not succeed."""
+    stub, attempts = bench.stub("SLOT1"), []
+
+    def answer(request):
+        if request["op"] == "write":
+            try:
+                holds.put("SLOT1", "hermes", 5, "grabbed mid-write")
+                attempts.append("placed")
+            except locks.Busy:
+                attempts.append("busy")
+        return StubSerial.answer(request)
+
+    stub.answer = answer
+    assert bench.run("serial-write SLOT1 hi").returncode == 0
+    assert attempts == ["busy"] and holds.get("SLOT1") is None
+
+
 def test_serial_not_running_is_1(bench):
     result = bench.run("serial-tail SLOT2")
     assert result.returncode == 1 and b"not running" in result.stderr
