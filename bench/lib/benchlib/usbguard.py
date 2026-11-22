@@ -7,6 +7,7 @@ Every guard refuses with exit 2 before anything is touched: an unconfigured slot
 parent, a mass-storage interface (class 08) anywhere in the affected subtree, a hub location
 outside BENCH_HUB_PATHS, and any other argv.
 """
+from contextlib import ExitStack
 import getpass
 import os
 import shutil
@@ -109,12 +110,35 @@ def usb_reset(slot, client, record):
     return OK
 
 
-def power_cycle(record):
+def affected_slots(location):
+    """Configured slots on or beneath the hub at `location`."""
+    slots = config.load_slots()
+    return sorted(label for label, options in slots.items()
+                  if options["path"] == location or options["path"].startswith(location + "."))
+
+
+def power_cycle(record, client):
     location = plan_power_cycle()
     record["note"] = f"hub {location}"
     tool = shutil.which("uhubctl")
     if tool is None:
         raise Refused(TOOL_FAILED, "uhubctl is not installed")
+    # Every board under the hub loses power: honour every slot's hold and wait for no one, and
+    # keep all their locks until the cycle is over (PR review, 2026-11-22).
+    with ExitStack() as held:
+        for slot in affected_slots(location):
+            try:
+                held.enter_context(locks.slot_lock(slot))
+            except locks.Busy:
+                raise Refused(BUSY, f"{slot} is busy (another operation holds its lock)") from None
+            try:
+                holds.check(slot, client)
+            except holds.Held as exc:
+                raise Refused(HELD, f"{slot} {exc}") from None
+        return _run_uhubctl(tool, location)
+
+
+def _run_uhubctl(tool, location):
     try:
         proc = subprocess.run([tool, "-l", location, "-a", "cycle", "-d", "3"], stdin=subprocess.DEVNULL,
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -129,6 +153,10 @@ def power_cycle(record):
 
 
 def main(argv=None):
+    if os.geteuid() == 0:
+        # Running as root (via sudo): paths come only from the compiled-in defaults.
+        for name in ("BENCH_ETC", "BENCH_RUN", "BENCH_STATE", "BENCH_SYSFS"):
+            os.environ.pop(name, None)
     argv = sys.argv[1:] if argv is None else argv
     if argv == ["power-cycle"]:
         verb, slot = "power-cycle", None
@@ -141,7 +169,7 @@ def main(argv=None):
     record = {"kind": None, "usb_serial": None, "note": None}
     started = time.monotonic()
     try:
-        rc = usb_reset(slot, client, record) if slot else power_cycle(record)
+        rc = usb_reset(slot, client, record) if slot else power_cycle(record, client)
     except Refused as exc:
         log(str(exc))
         if exc.code == REFUSED:

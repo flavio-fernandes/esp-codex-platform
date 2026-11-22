@@ -121,6 +121,12 @@ SLOT6     1-1.3
 
 ## Locks, holds, history (`benchlib`)
 
+- Files that the root helper (`bench-usb`) opens in the group-writable `/run/bench` and `/var/lib/bench` are opened
+  with `O_NOFOLLOW` (+ `O_NONBLOCK`), and must be regular files (history: also a single link). A planted symlink,
+  FIFO or device is refused. As root, `bench-usb` ignores the `BENCH_*` path overrides.
+- `power-cycle` takes the lock and checks the hold of every slot on or under the hub, and keeps the locks until the
+  cycle ends. Another client's hold → 69, a busy slot → 65.
+
 - **Lock** (`benchlib.locks.slot_lock(slot)`): `flock` on `/run/bench/SLOTn.lock`, which is opened
   read-only (pre-created by tmpfiles; never created in a sticky dir). Every flash, backup, info,
   usb-reset or reset of a slot holds it. Non-blocking: busy → exit code 65.

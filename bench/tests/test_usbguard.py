@@ -185,3 +185,77 @@ def test_guard_other_storage_still_refused_beside_bootsel(hub, capsys, vid, pid)
     assert usbguard.main(["power-cycle"]) == 2
     assert "mass-storage" in capsys.readouterr().err
     assert hub.untouched() and history.tail(1) == []
+
+
+# --- PR #4 review (2026-11-22): power-cycle honours holds and locks; root-opened files are not redirectable
+
+
+def test_power_cycle_refused_while_another_client_holds_a_slot_under_the_hub(hub, capsys):
+    holds.put("SLOT1", "client-b", 30, "flashing something")
+    assert usbguard.main(["power-cycle"]) == 69
+    assert hub.uhubctl_calls() == []
+    assert "SLOT1" in capsys.readouterr().err
+
+
+def test_power_cycle_refused_while_a_slot_under_the_hub_is_busy(hub):
+    with locks.slot_lock("SLOT3"):
+        assert usbguard.main(["power-cycle"]) == 65
+    assert hub.uhubctl_calls() == []
+
+
+def test_power_cycle_keeps_every_affected_lock_during_the_cycle(hub, monkeypatch):
+    seen = {}
+    real = usbguard._run_uhubctl
+
+    def spy(tool, location):
+        seen.update({slot: locks.lock_busy(slot) for slot in ("SLOT1", "SLOT2", "SLOT3")})
+        return real(tool, location)
+    monkeypatch.setattr(usbguard, "_run_uhubctl", spy)
+    assert usbguard.main(["power-cycle"]) == 0
+    # SLOT1 (1-1.1) and SLOT3 (1-1.3) are under hub 1-1; SLOT2 (1-2) is not.
+    assert seen == {"SLOT1": True, "SLOT2": False, "SLOT3": True}
+
+
+def test_power_cycle_own_hold_does_not_block(hub):
+    holds.put("SLOT1", "client-a", 30, "my own reservation")
+    assert usbguard.main(["power-cycle"]) == 0
+
+
+def test_root_ignores_bench_path_overrides(monkeypatch):
+    monkeypatch.setattr(usbguard.os, "geteuid", lambda: 0)
+    monkeypatch.setenv("BENCH_STATE", "/tmp/attacker-chosen")
+    assert usbguard.main(["no-such-verb"]) == 2
+    assert "BENCH_STATE" not in os.environ
+
+
+def test_history_refuses_a_planted_symlink(roots, tmp_path):
+    victim = tmp_path / "root-owned-file"
+    victim.write_text("precious\n")
+    (roots["state"] / "flash-history.jsonl").symlink_to(victim)
+    with pytest.raises(OSError):
+        history.append(client="x", verb="usb-reset", slot="SLOT1", rc=0)
+    assert victim.read_text() == "precious\n"
+
+
+def test_history_refuses_a_hard_link(roots, tmp_path):
+    victim = tmp_path / "other-file"
+    victim.write_text("precious\n")
+    os.link(victim, roots["state"] / "flash-history.jsonl")
+    with pytest.raises(OSError):
+        history.append(client="x", verb="usb-reset", slot="SLOT1", rc=0)
+    assert victim.read_text() == "precious\n"
+
+
+def test_lock_refuses_a_symlink_or_fifo(roots, tmp_path):
+    target = tmp_path / "elsewhere"
+    target.write_text("")
+    (roots["run"] / "SLOT1.lock").unlink()
+    (roots["run"] / "SLOT1.lock").symlink_to(target)
+    with pytest.raises(OSError):
+        with locks.slot_lock("SLOT1"):
+            pass
+    (roots["run"] / "SLOT2.lock").unlink()
+    os.mkfifo(roots["run"] / "SLOT2.lock")
+    with pytest.raises(OSError):
+        with locks.slot_lock("SLOT2"):
+            pass

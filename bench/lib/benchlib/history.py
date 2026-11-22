@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import fcntl
 import json
 import os
+import stat
 from . import config
 
 FIELDS = ("ts", "client", "verb", "slot", "kind", "usb_serial", "sha256", "size", "rc", "seconds", "note")
@@ -23,10 +24,16 @@ def append(**fields):
     payload = (json.dumps(record, ensure_ascii=True, allow_nan=False) + "\n").encode()
     path = _path()
     path.parent.mkdir(parents=True, exist_ok=True)
+    # bench-usb appends as root inside a group-writable directory: never follow a planted
+    # symlink, and refuse anything that is not a plain single-link file (PR review, 2026-11-22).
     try:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_APPEND, 0o660)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_APPEND | os.O_NOFOLLOW, 0o660)
     except FileExistsError:
-        fd = os.open(path, os.O_WRONLY | os.O_APPEND)
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK)
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            os.close(fd)
+            raise OSError(f"refusing history file {path}: not a regular single-link file")
     else:
         # Both bench and wbagent append; do not let the creator's umask
         # silently remove the shared group's write permission.
