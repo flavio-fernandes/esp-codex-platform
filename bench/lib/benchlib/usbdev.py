@@ -1,4 +1,5 @@
 """Resolve physical USB ports without opening devices."""
+import errno
 import re
 from pathlib import Path
 from . import config
@@ -22,6 +23,11 @@ def _read(path):
         return path.read_text().strip()
     except FileNotFoundError:
         return None
+    except OSError as exc:
+        # A device mid-disconnect answers ENODEV on its sysfs attributes (Argon W10, 2026-11-21).
+        if exc.errno in (errno.ENODEV, errno.ENXIO, errno.EIO):
+            return None
+        raise
 
 
 def _interfaces(devices, path):
@@ -30,6 +36,16 @@ def _interfaces(devices, path):
 
 
 def resolve(path, sysfs_root=None):
+    """Device fields, or None when absent. A device vanishing mid-read is absent, not an error."""
+    try:
+        return _resolve(path, sysfs_root)
+    except OSError as exc:
+        if exc.errno in (errno.ENODEV, errno.ENXIO, errno.ENOENT, errno.EIO):
+            return None
+        raise
+
+
+def _resolve(path, sysfs_root=None):
     """Return device fields, or None for absent/disappearing devices.
 
     VID/PID are lowercase hex strings; busnum/devnum are ints or None;

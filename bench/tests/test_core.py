@@ -230,3 +230,22 @@ def test_storage_subtree_exempts_rp2_bootsel(usb, nested):
     usb(path="1-1.2.1", vid="0781", pid="5567", storage=True, nested=nested)
     assert usbdev.subtree_has_mass_storage("1-1")
     assert not usbdev.subtree_has_mass_storage("1-1.1")
+
+
+def test_resolve_device_vanishing_mid_read_is_absent(monkeypatch, tmp_path):
+    """Argon W10 2026-11-21: sysfs attributes of a device mid-disconnect raise ENODEV."""
+    import errno as _errno
+    from pathlib import Path as _Path
+    from benchlib import usbdev
+    real = _Path.read_text
+    def flaky(self, *a, **k):
+        if self.name == "serial":
+            raise OSError(_errno.ENODEV, "No such device")
+        return real(self, *a, **k)
+    monkeypatch.setattr(_Path, "read_text", flaky)
+    devices = tmp_path / "bus/usb/devices/1-1.1"
+    devices.mkdir(parents=True)
+    (devices / "idVendor").write_text("2e8a\n")
+    (devices / "idProduct").write_text("000a\n")
+    device = usbdev.resolve("1-1.1", sysfs_root=tmp_path)
+    assert device is None or device["serial"] is None
