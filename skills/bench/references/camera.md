@@ -19,8 +19,9 @@ Check each exit status before opening results. For automation write to a `.part`
 file and rename only on success. Never combine stderr with JPEG/tar stdout.
 Inspect archive entries before extracting into a fresh private directory. `seq`
 is timed (1–60 images, interval 0–600 seconds); `burst` is consecutive frames
-(1–300), not a promise of an exact frame rate. Resolution is `res=WxH`; `skip=N`
-discards warm-up frames. Do not assume a camera supports focus controls.
+(1–300), not a promise of an exact frame rate. Resolution is `res=WxH` (16–4096 each); `skip=N`
+(0–300) discards warm-up frames. `exposure` is `auto` or 1–10000, `threshold` 0–255; anything
+outside is refused with 2. Do not assume a camera supports focus controls.
 
 - **Manual exposure for LEDs.** Auto exposure can turn pixels into white blobs.
   Lower N gives darker, crisper pixels. Tune once for the scene, then reuse it

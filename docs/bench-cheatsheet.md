@@ -27,7 +27,7 @@ are stderr. Never merge stderr into firmware/photo downloads.
 | `flash-pico SLOTn` | UF2 from stdin, touch/BOOTSEL/load/verify/run |
 | `flash-esp SLOTn chip-id\|flash-id` | ESP identity, reset-aware |
 | `flash-esp SLOTn write-flash 0xOFF` | Single merged image from stdin; identity first |
-| `esp-save SLOTn [SIZE]` | Binary backup starting at zero; SIZE decimal/hex/ALL |
+| `esp-save SLOTn [SIZE]` | Binary backup starting at zero; SIZE decimal, `0x` hex (up to 1 GiB) or ALL |
 | `usb-reset SLOTn` | Guarded re-enumeration of one USB port |
 | `power-cycle` | Guarded, opt-in whole-hub power switch; see runbook |
 | `hold SLOTn MINUTES REASON` | Reserve against other clients' mutations; 1–720 minutes |

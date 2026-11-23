@@ -89,3 +89,6 @@ ESPHome on RP2 (`rp2:` with `board: rpipicow`; the older `rp2040:` key is deprec
 without credentials: `wifi: ap: {}` + `improv_serial:`, no `!secret`. After `flash-pico` and a
 fresh serial line, pipe the SSID and password lines to `ssh bench-agent wifi-provision SLOTn`.
 The CDC port is opened with DTR high, as `bench-serial` does, so the logger keeps talking.
+A new UF2 does **not** erase the credentials: ESPHome keeps them in the last flash sector, outside
+the image. To retire a board, flash a UF2 padded with 0xFF pages to the end of flash (2 MiB on a
+Pico W), then check a `pico-save` backup for the old SSID.

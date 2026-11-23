@@ -115,9 +115,13 @@ provision it on the bench afterwards, over the slot's serial port:
   `printf '%s\n%s\n' "$SSID" "$PASSWORD" | ssh bench-agent wifi-provision SLOTn`.
   Prints `url: http://<ip>` and `state: provisioned`. The credentials go only on
   stdin: never on a command line, in a file on a build host, or in a log.
-- Provision again after **every** flash: an ESP32 factory image written at 0x0
-  overwrites the NVS partition that holds them (a UF2 may keep them; don't rely
-  on it). Check `state: provisioned` before any network test.
+- Provision after **every** flash: it is idempotent, and proves that the new image
+  answers Improv. Check `state: provisioned` before any network test.
+- A re-flash does **not** erase the credentials. ESPHome keeps them in NVS: on an
+  ESP32 with esp-idf that is the `nvs` partition (e.g. 0x390000 on 4 MB), outside
+  the factory image; on a Pico W it is the last flash sector, outside the UF2. To
+  retire a board, write an image padded with 0xFF to the end of flash, then check
+  a backup for the old SSID.
 - Exit 68 = device error, no improv answer (no `improv_serial:`, or the logger
   not on that port) or no join within 45 s. `history` records only that a
   provisioning happened.
