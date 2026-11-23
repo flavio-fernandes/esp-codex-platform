@@ -84,6 +84,13 @@ class SerialOwner:
                                          f"{ts or timestamp()} {text}", (), None))
 
     def _line(self, raw):
+        """Publish raw bytes as one or more lines of at most MAX_LINE bytes. Every path that
+        publishes (newline, partial overflow, idle flush, close) goes through here, so no line in
+        the ring, the log or a reply can exceed the bound (PR review, 2026-11-23)."""
+        for start in range(0, max(len(raw), 1), MAX_LINE):
+            self._publish(raw[start:start + MAX_LINE])
+
+    def _publish(self, raw):
         self.seq += 1
         line = {"seq": self.seq, "ts": timestamp(),
                 "text": raw.decode("utf-8", errors="replace").replace("\r", "")}

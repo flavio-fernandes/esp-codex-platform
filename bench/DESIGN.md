@@ -93,8 +93,10 @@ SLOT6     1-1.3
 - Hot-plug: poll the port every 100 ms (sysfs only, no udev dependency). Reopen as soon as a tty
   appears. Record `attach` and `detach` events in the log.
 - Every received line gets `seq` (monotonic per process), `ts` (UTC ISO8601, ms), and `text`
-  (decoded utf-8, `errors=replace`, CR stripped). Partial lines are flushed after 500 ms idle,
-  and a line reaching 4 KiB is published at once (a newline-free stream cannot grow memory).
+  (decoded utf-8, `errors=replace`, CR stripped). Partial lines are flushed after 500 ms idle.
+  No line exceeds 4 KiB: a longer one, with or without its newline, is published in 4 KiB pieces
+  (bounded memory and replies). `wait` matches within one piece, so a pattern straddling a split of
+  an over-4 KiB line is not seen.
 - Ring buffer of the last 5000 lines in memory. Persistent log at `/var/lib/bench/serial/SLOTn.log`,
   one `ts text` line each, rotated at 5 MiB, keeping 5.
 - Socket `/run/bench/SLOTn.sock`: unix stream, one JSON request line, then JSON response lines.

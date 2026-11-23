@@ -353,3 +353,20 @@ def test_a_newline_free_stream_is_split_at_max_line(running):
     lines = eventually(lambda: [l for l in client.tail("SLOT1", 1000) if l["seq"] > before])
     assert lines and all(len(line["text"]) <= MAX_LINE for line in lines)
     assert any(len(line["text"]) == MAX_LINE for line in lines)
+
+
+@pytest.mark.parametrize("payload", [b"y" * 65535 + b"\n", b"\xff" * 9000 + b"\r\n"])
+def test_a_long_newline_terminated_line_is_split_and_every_reply_fits(running, payload):
+    """PR review 2026-11-23: a long line whose newline came in the same read bypassed MAX_LINE, and
+    its reply broke the client's 64 KiB reply bound (tail, follow and wait all failed)."""
+    from benchlib.serialowner import MAX_LINE
+    owner, master, _, _ = running
+    before = client.state("SLOT1")["seq"]
+    writer = threading.Thread(target=os.write, args=(master, payload))
+    writer.start()
+    expected = -(-len(payload.rstrip(b"\r\n")) // MAX_LINE)
+    eventually(lambda: client.state("SLOT1")["seq"] >= before + expected, timeout=5)
+    writer.join()
+    lines = [l for l in client.tail("SLOT1", 1000) if l["seq"] > before]   # the client accepts every reply
+    assert len(lines) == expected and all(len(l["text"].encode("utf-8")) <= 3 * MAX_LINE for l in lines)
+    assert all(len(l["text"]) <= MAX_LINE for l in lines)
