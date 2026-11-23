@@ -114,3 +114,28 @@ def test_private_serial_logs_drops_other_bits_and_skips_links(tmp_path):
     installer.private_serial_logs(tmp_path)
     assert old.stat().st_mode & 0o777 == 0o640 and kept.stat().st_mode & 0o777 == 0o640
     assert target.stat().st_mode & 0o777 == 0o644
+
+
+def test_manifest_refuses_an_empty_source_file(monkeypatch, tmp_path):
+    """Argon 2026-11-23: a panic during `git pull` emptied checkout files; install copied them and
+    --check (comparing against the same checkout) said NO DRIFT."""
+    source = tmp_path / 'bench'
+    for folder in ('lib/benchlib', 'bin', 'sbin', 'systemd', 'udev', 'tmpfiles', 'sudoers', 'sshd', 'journald'):
+        (source / folder).mkdir(parents=True)
+    (source / 'lib/benchlib/config.py').write_text('X = 1\n')
+    (source / 'lib/benchlib/serialclient.py').write_text('')
+    monkeypatch.setattr(installer, 'SOURCE', source)
+    with pytest.raises(ValueError, match='empty source file .*serialclient.py'):
+        installer.manifest('/site', {}, {})
+
+
+def test_put_is_durable_and_atomic(monkeypatch, tmp_path):
+    synced = []
+    real_fsync = installer.os.fsync
+    monkeypatch.setattr(installer.os, 'fsync', lambda fd: (synced.append(fd), real_fsync(fd)))
+    monkeypatch.setattr(installer.os, 'fchown', lambda fd, uid, gid: None)
+    target = tmp_path / 'etc/unit.service'
+    installer.put(target, b'[Unit]\n', 0o644)
+    assert target.read_bytes() == b'[Unit]\n' and target.stat().st_mode & 0o777 == 0o644
+    assert len(synced) == 2            # the file before the rename, then its directory
+    assert [p.name for p in target.parent.iterdir()] == ['unit.service']

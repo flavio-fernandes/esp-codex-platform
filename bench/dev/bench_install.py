@@ -38,14 +38,24 @@ def venv_info():
                           '--probe').stdout)
 
 
+def source_bytes(path):
+    """A source file's bytes. An empty one is refused: on Argon (2026-11-23) a kernel panic during
+    `git pull` left emptied files in the checkout, and installing them broke the bench while the
+    drift check (which compares against the same checkout) reported NO DRIFT."""
+    data = Path(path).read_bytes()
+    if not data:
+        raise ValueError(f'empty source file {path}: repair the checkout (git checkout -- . && sync)')
+    return data
+
+
 def manifest(site, env, slots):
     files = {}
     for path in sorted((SOURCE / 'lib/benchlib').glob('*.py')):
-        files['/opt/bench/lib/benchlib/' + path.name] = (path.read_bytes(), 0o644)
+        files['/opt/bench/lib/benchlib/' + path.name] = (source_bytes(path), 0o644)
     for folder, target in [('bin', '/usr/local/bin'), ('sbin', '/usr/local/sbin')]:
         for path in sorted((SOURCE / folder).iterdir()):
             if path.is_file():
-                text = path.read_text().splitlines(keepends=True)
+                text = source_bytes(path).decode().splitlines(keepends=True)
                 text[0] = '#!/opt/bench/venv/bin/python -I\n'
                 files[target + '/' + path.name] = (''.join(text).encode(), 0o755)
     files[site + '/bench.pth'] = (b'/opt/bench/lib\n', 0o644)
@@ -54,7 +64,7 @@ def manifest(site, env, slots):
                            ('sshd', '/etc/ssh/sshd_config.d'),
                            ('journald', '/etc/systemd/journald.conf.d')]:
         for path in sorted((SOURCE / folder).iterdir()):
-            files[target + '/' + path.name] = (path.read_bytes(), 0o440 if folder == 'sudoers' else 0o644)
+            files[target + '/' + path.name] = (source_bytes(path), 0o440 if folder == 'sudoers' else 0o644)
     rules = ['# Generated from BENCH_HUB_PATHS; rerun install after configuration changes.\n']
     for hub in env.get('BENCH_HUB_PATHS', '').split():
         validate_port(hub)
@@ -70,13 +80,22 @@ def manifest(site, env, slots):
 def put(path, data, mode):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    # Atomic replacement; never follow a destination symlink as root.
+    # Atomic and durable replacement; never follow a destination symlink as root. The data is on
+    # disk before the rename, and the rename before we go on: a crash (this host's root SSD can
+    # drop off USB and panic the kernel) leaves the old file or the new one, never an empty one.
     with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as file:
         temporary = Path(file.name)
         file.write(data)
         os.fchmod(file.fileno(), mode)
         os.fchown(file.fileno(), 0, 0)
+        file.flush()
+        os.fsync(file.fileno())
     temporary.replace(path)
+    directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
 
 
 def enabled_serial():

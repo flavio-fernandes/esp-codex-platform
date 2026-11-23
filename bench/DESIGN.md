@@ -404,6 +404,14 @@ Details fixed by the implementation (`benchlib.agentshell`):
 
 - Idempotent. It installs packages, the lib, bins, units, udev rules, tmpfiles, sudoers
   (`visudo -c` checked), users and groups. It never overwrites an existing `/etc/bench/*.conf`.
+- Crash-safe, for a host whose root disk can drop off and panic the kernel (Argon, 2026-11-23):
+  - apt runs only for missing packages, and the venv and pip only when esptool 5 is missing, so a
+    re-install writes just the bench files;
+  - every file is written to a temporary, fsynced, renamed into place and its directory fsynced,
+    so a crash leaves the old file or the new one, never an empty one;
+  - an empty source file is refused (install and `--check`): a panic during `git pull` once emptied
+    files in the checkout, and installing them broke the bench while the check, comparing against
+    the same checkout, reported no drift. Repair with `git checkout -- . && sync`.
 - udev:
   - `2e8a` → group plugdev;
   - `power/control=on` for the bench hub (05e3:0610/0626) and any device on a slot port.
