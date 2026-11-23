@@ -257,8 +257,13 @@ them (ESPHome `wifi: ap: {}` + `improv_serial:`) and provisioned here.
 Details fixed by the implementation (`benchlib.usbguard`, `bench/sbin/bench-usb`):
 - argv is exactly `usb-reset SLOTn` or `power-cycle`; anything else is refused with 2.
 - A guard refusal (2) touches nothing and writes no history. A port without its `disable` file
-  is refused too. The affected subtree is the slot's port for `usb-reset` and the whole hub for
-  `power-cycle`.
+  is refused too. The affected subtree is the slot's port for `usb-reset`. For `power-cycle` it is
+  every hub uhubctl will switch, because uhubctl follows USB3 duality and cycles both halves:
+  the location, the hubs its ports are paired with by sysfs `peer` links, and every hub that a
+  status-only `uhubctl -l <location>` reports. That status run must report the location (else 2).
+  A root hub among them refuses (2): on a Raspberry Pi 4, `1-1` is dual to USB3 root hub `2`,
+  where the boot SSD is. The Pi 4 has no peer links, so the uhubctl listing is what catches it.
+  Storage in any of those subtrees refuses too (PR review, 2026-11-22).
 - `usb-reset`: after the guards it takes the slot lock (65) and checks the hold (69; the client is
   `BENCH_CLIENT`, else `SUDO_USER`). It writes `1`, waits 1 s, writes `0` (also on error), then
   waits up to 10 s for a device at the path and prints

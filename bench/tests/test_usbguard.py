@@ -34,8 +34,8 @@ def hub(roots, usb, tmp_path, monkeypatch):
     bin_dir.mkdir()
     uhubctl = bin_dir / "uhubctl"
     uhubctl.write_text(f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{tmp_path}/uhubctl.log"\n'
-                       'echo "Current status for hub 1-1 [05e3:0610, USB 2.10, 4 ports, ppps]"\n'
-                       'exit "${FAKE_UHUBCTL_RC:-0}"\n')
+                       'printf "%b" "${FAKE_UHUBCTL_STATUS:-Current status for hub 1-1 [05e3:0610, USB 2.10, 4 ports, ppps]\\n}"\n'
+                       'case "$*" in *" -a "*) exit "${FAKE_UHUBCTL_RC:-0}" ;; esac\n')
     uhubctl.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
     monkeypatch.setenv("BENCH_CLIENT", "client-a")
@@ -53,13 +53,13 @@ def hub(roots, usb, tmp_path, monkeypatch):
         env = roots["etc"] / "bench.env"
 
         @staticmethod
-        def uhubctl_calls():
-            return Hub.log.read_text().splitlines() if Hub.log.exists() else []
+        def uhubctl_calls():   # actions only; a status query (`-l X`) changes nothing
+            return [c for c in Hub.log.read_text().splitlines() if " -a " in c] if Hub.log.exists() else []
 
         @staticmethod
         def untouched():
             return (all((devices / f"1-1:1.0/1-1-port{n}/disable").read_text() == "0\n" for n in (1, 2, 3, 4))
-                    and (root_port / "disable").read_text() == "0\n" and not Hub.log.exists())
+                    and (root_port / "disable").read_text() == "0\n" and not Hub.uhubctl_calls())
 
     Hub.pauses, Hub.devices, Hub.usb = pauses, devices, usb
     return Hub
@@ -272,3 +272,49 @@ def test_lock_refuses_a_symlink_or_fifo(roots, tmp_path):
     with pytest.raises(OSError):
         with locks.slot_lock("SLOT2"):
             pass
+
+
+def _peer(hub, port, target):
+    """Link hub 1-1's port to its companion port, as the kernel does (`<port>/peer`)."""
+    target.mkdir(parents=True, exist_ok=True)
+    (hub.devices / f"1-1:1.0/1-1-port{port}/peer").symlink_to(target, target_is_directory=True)
+
+
+def test_power_cycle_refused_when_companion_is_a_root_hub(hub, capsys):
+    # Raspberry Pi 4: the VL805's USB2 hub 1-1 is dual to USB3 root hub 2, where the boot SSD is.
+    for port in (1, 2, 3, 4):
+        _peer(hub, port, hub.devices / f"usb2:1.0/usb2-port{port}")
+    assert usbguard.main(["power-cycle"]) == 2
+    assert "root hub usb2" in capsys.readouterr().err
+    assert hub.untouched() and history.tail(1) == []
+
+
+def test_power_cycle_refused_when_uhubctl_reports_a_root_companion(hub, monkeypatch, capsys):
+    monkeypatch.setenv("FAKE_UHUBCTL_STATUS", "Current status for hub 2 [1d6b:0003, USB 3.00, 4 ports, ppps]\\n"
+                                              "Current status for hub 1-1 [2109:3431, USB 2.10, 4 ports, ppps]\\n")
+    assert usbguard.main(["power-cycle"]) == 2
+    assert "root hub usb2" in capsys.readouterr().err and hub.untouched()
+
+
+def test_power_cycle_refused_with_storage_under_the_usb3_companion(hub, capsys):
+    hub.usb(path="2-1", vid="05e3", pid="0626")
+    _peer(hub, 2, hub.devices / "2-1:1.0/2-1-port2")
+    hub.usb(path="2-1.2", vid="174c", pid="1156", storage=True)   # the boot SSD on the USB3 half
+    assert usbguard.main(["power-cycle"]) == 2
+    assert "hub 2-1, the companion of 1-1" in capsys.readouterr().err
+    assert hub.untouched() and history.tail(1) == []
+
+
+def test_power_cycle_allowed_with_a_clean_companion(hub, monkeypatch):
+    hub.usb(path="2-1", vid="05e3", pid="0626")
+    _peer(hub, 1, hub.devices / "2-1:1.0/2-1-port1")
+    monkeypatch.setenv("FAKE_UHUBCTL_STATUS", "Current status for hub 2-1 [05e3:0626, USB 3.20, 4 ports, ppps]\\n"
+                                              "Current status for hub 1-1 [05e3:0610, USB 2.10, 4 ports, ppps]\\n")
+    assert usbguard.main(["power-cycle"]) == 0
+    assert hub.uhubctl_calls() == ["-l 1-1 -a cycle -d 3"]
+
+
+def test_power_cycle_refused_when_uhubctl_does_not_see_the_hub(hub, monkeypatch, capsys):
+    monkeypatch.setenv("FAKE_UHUBCTL_STATUS", "No compatible devices detected!\\n")
+    assert usbguard.main(["power-cycle"]) == 2
+    assert "does not report hub 1-1" in capsys.readouterr().err and hub.untouched()
