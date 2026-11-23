@@ -248,6 +248,10 @@ them (ESPHome `wifi: ap: {}` + `improv_serial:`) and provisioned here.
   boots; refuse "awaiting authorization"; send the Wi-Fi RPC; wait ≤45 s for the RPC result
   (URL) or `provisioned`. The reader scans past log text and validates version, type and checksum
   before trusting a length byte.
+- Output: one `url:` line per address, then `state:`. ESPHome sends a URL only with `web_server:`;
+  otherwise the address comes from the board's `[C] IP Address:` log line. If neither shows one
+  (a logger level less verbose than CONFIG hides that line), the exit is still 0, with a hint on
+  stderr.
 - Exit codes: 0, 2 usage, 65 busy, 66 absent, 68 device error / no answer / timeout, 69 held,
   70 wrong kind.
 
