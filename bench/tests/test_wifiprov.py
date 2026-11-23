@@ -240,3 +240,13 @@ def test_a_broken_serial_owner_is_busy_not_usage(roots, slot, monkeypatch, reply
         assert "port" not in slot          # the tty was never opened
     finally:
         owner.sock.close()
+
+
+def test_an_oversized_owner_reply_is_a_protocol_error(roots, slot, monkeypatch):
+    from benchlib import serialclient
+    owner = GarbageOwner(roots, monkeypatch, b"{" + b" " * (serialclient.MAX_REPLY + 10) + b"}\n")
+    try:
+        with pytest.raises(serialclient.ProtocolError, match="longer than"):
+            serialclient.state("SLOT1")
+    finally:
+        owner.sock.close()

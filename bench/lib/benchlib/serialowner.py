@@ -15,6 +15,10 @@ import serial
 from . import config, usbdev
 
 MAX_REQUEST = 65536
+# A board that streams without newlines (binary, progress bars) must not grow the partial line
+# forever: past this many bytes it is published as a line of its own. Worst-case ring memory is
+# then 5000 lines x 4 KiB (PR review, 2026-11-23).
+MAX_LINE = 4096
 
 
 def timestamp():
@@ -122,6 +126,9 @@ class SerialOwner:
                                 raw, _, rest = self.partial.partition(b"\n")
                                 self.partial = bytearray(rest)
                                 self._line(raw)
+                            while len(self.partial) >= MAX_LINE:
+                                self._line(bytes(self.partial[:MAX_LINE]))
+                                del self.partial[:MAX_LINE]
                         if self.partial and time.monotonic() - self.last_byte >= 0.5:
                             self._line(bytes(self.partial))
                             self.partial.clear()

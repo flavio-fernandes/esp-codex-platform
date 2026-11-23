@@ -5,6 +5,8 @@ import socket
 from . import config
 
 SOCKET_TIMEOUT = 5
+# One reply line: a serial line (at most 4 KiB, JSON-escaped up to 6x) plus its fields.
+MAX_REPLY = 64 * 1024
 
 
 class NotRunning(ConnectionError):
@@ -32,9 +34,11 @@ def _request(slot, request, timeout=SOCKET_TIMEOUT):
 
 
 def _read(stream):
-    raw = stream.readline()
+    raw = stream.readline(MAX_REPLY + 1)
     if not raw:
         raise ProtocolError("not-open", "owner closed the connection without a response")
+    if len(raw) > MAX_REPLY:
+        raise ProtocolError("bad-response", f"owner reply longer than {MAX_REPLY} bytes")
     # A malformed reply is a protocol error, the same for every caller: never a ValueError
     # (which the tools would report as a usage error) or an AttributeError (a traceback).
     try:

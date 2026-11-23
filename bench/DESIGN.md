@@ -93,7 +93,8 @@ SLOT6     1-1.3
 - Hot-plug: poll the port every 100 ms (sysfs only, no udev dependency). Reopen as soon as a tty
   appears. Record `attach` and `detach` events in the log.
 - Every received line gets `seq` (monotonic per process), `ts` (UTC ISO8601, ms), and `text`
-  (decoded utf-8, `errors=replace`, CR stripped). Partial lines are flushed after 500 ms idle.
+  (decoded utf-8, `errors=replace`, CR stripped). Partial lines are flushed after 500 ms idle,
+  and a line reaching 4 KiB is published at once (a newline-free stream cannot grow memory).
 - Ring buffer of the last 5000 lines in memory. Persistent log at `/var/lib/bench/serial/SLOTn.log`,
   one `ts text` line each, rotated at 5 MiB, keeping 5.
 - Socket `/run/bench/SLOTn.sock`: unix stream, one JSON request line, then JSON response lines.
@@ -109,7 +110,7 @@ SLOT6     1-1.3
 | `pause` | `{"op":"pause","by":"<who>"}` | `{"ok":true,"paused":true}` once the tty is **closed**. The pause lasts while this connection stays open; closing it (or the client dying) resumes automatically |
 | `reset` | `{"op":"reset"}` | esp-uart only: the standard EN pulse (RTS low→high with DTR high), then `{"ok":true}` |
 
-A reply that is not a JSON object, or an error without the usual fields, is a protocol error
+A reply line over 64 KiB, or one that is not a JSON object, or an error without the usual fields, is a protocol error
 (`bad-response`) for every client: a broken pause is busy (65) for the flashers and
 `wifi-provision`, a broken read is a failure (1) for the agent's serial verbs; never a usage error
 or a traceback.

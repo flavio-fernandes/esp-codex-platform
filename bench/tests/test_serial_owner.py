@@ -338,3 +338,18 @@ def test_sigterm_entrypoint(roots):
         if process.poll() is None:
             process.kill()
             process.wait()
+
+
+def test_a_newline_free_stream_is_split_at_max_line(running):
+    """PR review 2026-11-23: without newlines or a 500 ms gap the partial line grew without bound."""
+    from benchlib.serialowner import MAX_LINE
+    owner, master, _, _ = running
+    before = client.state("SLOT1")["seq"]
+    stop = time.monotonic() + 1.5
+    while time.monotonic() < stop:          # ~20 KiB, never a newline, never a 500 ms gap
+        os.write(master, b"x" * 512)
+        time.sleep(0.03)
+        assert len(owner.partial) < MAX_LINE + 65536   # bounded while data keeps arriving
+    lines = eventually(lambda: [l for l in client.tail("SLOT1", 1000) if l["seq"] > before])
+    assert lines and all(len(line["text"]) <= MAX_LINE for line in lines)
+    assert any(len(line["text"]) == MAX_LINE for line in lines)
