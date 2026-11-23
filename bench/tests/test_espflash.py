@@ -331,3 +331,16 @@ def test_fast_baud_transfer_error_falls_back_to_115200(bench, capsys):
     err = capsys.readouterr().err
     assert "retried at the 115200 default" in err
     assert "Reading from" not in err  # esptool 5 progress bars are filtered
+
+
+@pytest.mark.parametrize("size, sent", [("010", "0xa"), ("4096", "0x1000")])
+def test_read_flash_size_forms_are_normalized(bench, size, sent):
+    """A decimal SIZE with a leading zero crashed int(size, 0) before any history was written."""
+    target = bench.tmp_path / "save.bin"
+    assert espflash.main(["SLOT1", "read-flash", str(target), size]) == 0
+    assert bench.argv()[1][-4:] == ["read-flash", "0", sent, str(target)]
+
+
+@pytest.mark.parametrize("size", ["0", "000", "0x0", "0x40000001", "9" * 40, "-1", "1e3"])
+def test_read_flash_bad_sizes_are_usage_errors(bench, size):
+    assert espflash.main(["SLOT1", "read-flash", str(bench.tmp_path / "save.bin"), size]) == 2

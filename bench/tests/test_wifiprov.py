@@ -202,3 +202,41 @@ def test_serial_errors_are_tool_failures_not_tracebacks(roots, slot, monkeypatch
     out, err = capsys.readouterr()
     assert "serial port error" in err and PASSWORD not in out + err
     assert history_rows(roots)[-1]["rc"] == 68
+
+
+class GarbageOwner:
+    """A bench-serial socket that answers every request with `reply` (a broken owner)."""
+
+    def __init__(self, roots, monkeypatch, reply):
+        import socket
+        import threading
+        monkeypatch.chdir(roots["run"].parent)           # sockaddr_un paths are short
+        monkeypatch.setenv("BENCH_RUN", "run")
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.bind("run/SLOT1.sock")
+        self.sock.listen()
+        self.reply = reply
+        threading.Thread(target=self.serve, daemon=True).start()
+
+    def serve(self):
+        while True:
+            try:
+                conn, _ = self.sock.accept()
+            except OSError:
+                return
+            with conn:
+                conn.recv(4096)
+                conn.sendall(self.reply)
+
+
+@pytest.mark.parametrize("reply", [b"not json\n", b"[1, 2]\n", b'{"ok": false}\n'])
+def test_a_broken_serial_owner_is_busy_not_usage(roots, slot, monkeypatch, reply):
+    from benchlib import serialclient
+    owner = GarbageOwner(roots, monkeypatch, reply)
+    try:
+        with pytest.raises(serialclient.ProtocolError):
+            serialclient.state("SLOT1")
+        assert wifiprov.main(["SLOT1"], stdin=io.StringIO("a\nb\n")) == 65
+        assert "port" not in slot          # the tty was never opened
+    finally:
+        owner.sock.close()

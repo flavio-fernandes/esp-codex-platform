@@ -82,7 +82,9 @@ def test_snap_options_override_env_and_auto_exposure_is_set_every_call(cam):
 
 
 @pytest.mark.parametrize("opts", [["exposure=-1"], ["exposure=bright"], ["res=640"], ["res=axb"],
-                                  ["threshold=5"], ["device=/dev/sda"], ["--device=/dev/sda"], ["exposure="]])
+                                  ["threshold=5"], ["device=/dev/sda"], ["--device=/dev/sda"], ["exposure="],
+                                  ["exposure=0"], ["exposure=10001"], ["res=8x8"], ["res=99999999x720"],
+                                  ["skip=301"], ["skip=0000000000001"]])
 def test_snap_bad_options_usage(cam, opts, capsys):
     assert camera.main(["snap", str(cam.out), *opts]) == 2
     assert cam.calls() == [] and not cam.out.exists()
@@ -206,3 +208,8 @@ def test_stats_usage(cam, tmp_path):
     assert camera.main(["stats", str(tmp_path / "missing.jpg")]) == 2
     assert camera.main(["stats", str(tmp_path / "x.jpg"), "exposure=5"]) == 2
     assert camera.main([]) == 2 and camera.main(["record"]) == 2
+
+
+def test_stats_threshold_is_bounded(tmp_path):
+    (tmp_path / "x.jpg").write_bytes(b"")
+    assert camera.main(["stats", str(tmp_path / "x.jpg"), "threshold=256"]) == 2

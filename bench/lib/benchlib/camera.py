@@ -3,6 +3,7 @@
   bench-camera snap  OUT.jpg [exposure=auto|N] [res=WxH] [skip=N]
   bench-camera burst OUTDIR COUNT [exposure=auto|N] [res=WxH] [skip=N]
   bench-camera stats IN.jpg [threshold=N]
+  (exposure 1-10000, width and height 16-4096, skip 0-300, threshold 0-255)
 
 Settings come from bench.env (BENCH_CAMERA_DEVICE, _EXPOSURE, _WIDTH, _HEIGHT, _SKIP). Exposure is
 set on every capture: the camera keeps its controls between opens, so a previous manual value would
@@ -77,11 +78,15 @@ def parse_opts(opts, allowed, conf):
             conf["width"], conf["height"] = match.groups()
         else:
             conf[key] = value
-    if not (conf["exposure"] == "auto" or conf["exposure"].isdigit()):
-        raise Failed(USAGE, f"bad exposure: {conf['exposure']}")
-    for key in ("width", "height", "skip", "threshold"):
-        if not (conf[key].isascii() and conf[key].isdigit()):
-            raise Failed(USAGE, f"bad {key}: {conf[key]}")
+    # Bounded, so a request can never ask the camera (or the deadline) for something absurd.
+    for key, low, high in (("exposure", 1, 10000), ("width", 16, 4096), ("height", 16, 4096),
+                           ("skip", 0, 300), ("threshold", 0, 255)):
+        value = conf[key]
+        if key == "exposure" and value == "auto":
+            continue
+        if not (value.isascii() and value.isdigit() and len(value) <= 6 and low <= int(value) <= high):
+            raise Failed(USAGE, f"bad {key}: {value} (expected {'auto or ' if key == 'exposure' else ''}"
+                                f"{low}-{high})")
     return conf
 
 

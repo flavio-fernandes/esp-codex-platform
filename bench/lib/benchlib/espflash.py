@@ -127,9 +127,14 @@ def check_usage(argv):
         size = rest[1] if len(rest) == 2 else None
         if not out or not os.path.isdir(os.path.dirname(os.path.abspath(out))):
             raise Failed(USAGE, f"no directory for the output file: {out}")
-        if size is not None and (not SIZE_RE.fullmatch(size) or
-                                 (size != "ALL" and int(size, 0) == 0)):
-            raise Failed(USAGE, f"SIZE must be ALL, decimal or 0x-hex bytes above 0: {size}")
+        if size is not None:
+            # Decimal may carry leading zeros ("010"): never int(size, 0), which rejects those.
+            # esptool gets a normalized hex count either way.
+            nbytes = (None if size == "ALL" else int(size, 16) if size.lower().startswith("0x")
+                      else int(size, 10)) if SIZE_RE.fullmatch(size) else 0
+            if nbytes == 0 or (nbytes is not None and nbytes > 1 << 30):
+                raise Failed(USAGE, f"SIZE must be ALL, or decimal or 0x-hex bytes from 1 to 1 GiB: {size}")
+            size = "ALL" if nbytes is None else hex(nbytes)
         request.update(file=out, size=size)
     elif action == "write-flash":
         offset, file = rest
@@ -285,7 +290,7 @@ class Operation:
             size = self.request["size"]
             if size is None:
                 size = hex(flash) if flash is not None else "ALL"
-            elif size != "ALL" and flash is not None and int(size, 0) > flash:
+            elif size != "ALL" and flash is not None and int(size, 16) > flash:
                 raise Failed(USAGE, f"SIZE {size} is over the flash size ({flash} bytes)")
             args = ["read-flash", "0", size, self.request["file"]]
         else:

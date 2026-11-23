@@ -10,3 +10,8 @@ SupplementaryGroups=systemd-journal
 ExecStart=/usr/local/bin/bench-health --quiet
 SuccessExitStatus=1
 TimeoutStartSec=120
+# Same confinement as bench-serial@: it only reads system state and writes /run/bench.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/run/bench /var/lib/bench
+PrivateTmp=yes

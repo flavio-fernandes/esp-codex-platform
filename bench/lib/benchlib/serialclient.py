@@ -35,9 +35,16 @@ def _read(stream):
     raw = stream.readline()
     if not raw:
         raise ProtocolError("not-open", "owner closed the connection without a response")
-    value = json.loads(raw)
+    # A malformed reply is a protocol error, the same for every caller: never a ValueError
+    # (which the tools would report as a usage error) or an AttributeError (a traceback).
+    try:
+        value = json.loads(raw)
+    except (ValueError, RecursionError):
+        raise ProtocolError("bad-response", "owner sent invalid JSON") from None
+    if not isinstance(value, dict):
+        raise ProtocolError("bad-response", "owner sent a non-object reply")
     if value.get("ok") is False:
-        raise ProtocolError(value["error"], value.get("detail", ""))
+        raise ProtocolError(str(value.get("error", "error")), str(value.get("detail", "")))
     return value
 
 
