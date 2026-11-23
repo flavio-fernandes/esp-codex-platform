@@ -5,6 +5,7 @@
 secrets.yaml
 **/secrets.yaml
 config/workbench.env
+config/bench.env
 *.pem
 *.key
 *.p12

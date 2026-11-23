@@ -1,317 +1,102 @@
 # ESP Codex Platform
 
-A small, safety-first starter repo for ESPHome projects that are developed from
-a workstation through a Linux dev host and an ESP workbench.
+A safety-first ESPHome starter and Raspberry Pi 4 / Debian 13 hardware bench.
+The bench owns each serial port once; clients use restricted SSH verbs for
+flashing, monitoring, recovery and camera evidence. No client needs an admin
+shell on the bench.
 
-It is meant to give each new project the boring pieces up front: a repeatable
-devcontainer, reset-aware flashing wrappers, serial-monitor guardrails, generic
-ESPHome smoke examples, and docs that make the workflow easy to hand off.
+## Start here
 
-```text
-Mac/workstation -> VS Code SSH -> Linux host -> Docker/devcontainer -> ESP workbench -> ESP board
+- [Build the bench](docs/bench-build-from-scratch.md): port map, installation,
+  restricted keys, commissioning, recovery and USB-SSD hardening.
+- [Command cheatsheet](docs/bench-cheatsheet.md): verbs, holds and exit codes.
+- [Design contract](bench/DESIGN.md): authoritative paths and protocols.
+- [Client configuration](config/README.md): `BENCH_*` and migration aliases.
+- [Historical material](docs/history/README.md): retired setup and dated results.
+
+## Quick start
+
+You need Git, Bash and SSH; configure the `bench-agent` alias with a dedicated
+restricted key and a verified host fingerprint. ESPHome builds additionally
+need Docker and Dev Containers (or your own isolated toolchain).
+
+```sh
+cp config/bench.env.example config/bench.env
+# Edit local defaults; never commit this file.
+BENCH_STATIC_ONLY=1 tools/validate-bench.sh
+tools/validate-bench.sh
+tools/wb status
 ```
 
-## What You Get
+The optional `.devcontainer/` supplies ESPHome and developer tools. It uses SSH
+agent forwarding provided by Dev Containers; configure the alias/known_hosts
+inside the container, or set `BENCH_SSH_CONFIG` and `BENCH_KNOWN_HOSTS` to the
+read-only `/host-ssh` mount. Absolute paths in the host SSH config may need a
+container-local counterpart. No helper copies private keys or trusts keyscan
+output automatically.
 
-- ESPHome devcontainer based on the stable ESPHome image.
-- Project-local workbench wrappers in `tools/`.
-- USB-aware workbench status through `tools/espwb-status`.
-- Reset-aware `chip-id`, `flash-id`, `read-flash`, and `write-flash` through
-  `tools/espwb-esptool`.
-- RFC2217 serial monitoring through `tools/espwb-monitor`.
-- Workbench validation through `tools/validate-workbench.sh`.
-- Safe defaults for `SLOT1`, ignored local config, ignored secrets, ignored
-  build output, and ignored local artifacts.
-- Tiny generic ESPHome blink and heartbeat examples.
-- Docs templates for current state, roadmap, GitHub setup, references, public
-  hygiene, and workbench commands.
-
-## What This Is Not
-
-This is not a generator, package manager, or hardware abstraction layer. It is a
-plain repo you can copy, fork, or use as a starting point.
-
-This repo intentionally does not include board pinouts, private network values,
-Home Assistant entity IDs, device photos, firmware backups, generated binaries,
-or real secrets. Those belong in the downstream device project, and private
-values should stay in ignored local files.
-
-## Prerequisites
-
-Install these on the Linux host before using the quick start:
-
-- Docker Engine, with your user able to run `docker ps` without `sudo`.
-- Dev Containers CLI, available as `devcontainer` on `PATH`. VS Code with the
-  Dev Containers extension can also build/open the container, but the examples
-  below use the CLI.
-- Git, Bash, and an editor.
-- SSH access from the Linux host or devcontainer to the ESP workbench.
-- Optional: `v4l2-ctl` from `v4l-utils`, only for a camera attached to this host
-  (the bench camera is reached over SSH instead).
-
-This repo uses a Dev Container: a Docker-based development environment defined
-in `.devcontainer/` so ESPHome, esptool, and supporting CLI tools are consistent
-across checkouts. Curious readers can learn more at
-[containers.dev](https://containers.dev/).
-
-This repo's devcontainer supplies ESPHome, esptool, Python serial tooling,
-`curl`, `jq`, `rg`, `shellcheck`, and other project tools inside the container.
-It does not install Docker, the `devcontainer` CLI, SSH keys, or workbench
-system services on the host.
-
-The ESP workbench must already provide:
-
-- A reachable workbench API at `${WORKBENCH_URL}`.
-- SSH for `${WORKBENCH_USER}@${WORKBENCH_IP}`.
-- The reset-aware helper `/usr/local/bin/espwb-local-esptool`.
-- RFC2217 serial service for monitoring at `${ESP_PORT}`.
-- A board installed in `SLOT1`, unless a downstream project explicitly
-  documents and approves another slot.
-
-## Quick Start
-
-Clone the starter into any directory name and enter it:
-
-```bash
-git clone https://github.com/flavio-fernandes/esp-codex-platform.git my-esp-project
-cd my-esp-project
-```
-
-The devcontainer uses the local folder basename, so commands work the same
-whether the checkout is named `my-esp-project`, `esp-codex-playground`, or
-something else.
-
-Create local-only workbench settings:
-
-```bash
-cp config/workbench.env.example config/workbench.env
-$EDITOR config/workbench.env
-```
-
-Keep `config/workbench.env` private. The committed example uses documentation
-placeholders such as `192.0.2.10`. Values in `config/workbench.env` act as
-local defaults; command-specific environment variables such as
-`ESPWB_SLOT=SLOT2` still override them.
-
-Build or open the devcontainer:
-
-```bash
+```sh
 devcontainer up --workspace-folder . --remove-existing-container
 devcontainer exec --workspace-folder . esphome version
-devcontainer exec --workspace-folder . tools/validate-workbench.sh
+devcontainer exec --workspace-folder . tools/validate-bench.sh
 ```
 
-If `devcontainer` is not found, install the Dev Containers CLI on the Linux
-host or open the repository through VS Code's Dev Containers workflow. If
-`docker ps` requires `sudo`, fix the host Docker setup before continuing.
+## Build, identify, flash, prove
 
-The devcontainer creates its own `vscode` user and sets
-`updateRemoteUserUID: false` in `.devcontainer/devcontainer.json`. Keep that
-setting unless the Dockerfile user model changes; it avoids Dev Containers'
-extra UID-rewrite image and the BuildKit warning that rewrite can produce.
+First choose a supported board and an approved slot. Edit the board, flash size
+and pins in an [example](examples/README.md); generic defaults are placeholders,
+not a hardware inventory. Compile that exact source before flashing its image.
 
-Identify the board before changing or flashing examples:
-
-```bash
-devcontainer exec --workspace-folder . tools/espwb-esptool flash-id
-```
-
-Record the detected chip family and flash size. They must match the ESPHome
-`board` value you use later. The probe cannot discover the visible LED pin, so
-get that pin from the board silkscreen, vendor docs, or the downstream
-project's hardware notes.
-
-Check the blink example before building it. The committed defaults are a
-placeholder `featheresp32` board with `4MB` flash and `GPIO13` as the LED pin.
-In a fork, edit the `board`, `flash_size`, and `status_led_pin` substitutions in
-`examples/generic-blink/generic-blink.yaml` so they match the board installed
-in your workbench slot.
-
-Validate a tiny ESPHome example:
-
-```bash
+```sh
+tools/wb hold SLOT1 60 blink-proof
+tools/espwb-esptool flash-id
 devcontainer exec --workspace-folder . esphome config examples/generic-blink/generic-blink.yaml
 devcontainer exec --workspace-folder . esphome compile examples/generic-blink/generic-blink.yaml
+tools/espwb-esptool write-flash 0x0 examples/generic-blink/.esphome/build/generic-blink/.pioenvs/generic-blink/firmware.factory.bin
+tools/espwb-monitor 30
+tools/workbench-camera-capture artifacts/after.jpg
+tools/wb history 10
+tools/wb release SLOT1
 ```
 
-The first compile can take several minutes while PlatformIO downloads toolchains
-into the devcontainer cache. Later compiles are much faster.
+Stop on any failed step; release holds even after failure. Back up unknown boards
+before the first write. Blink requires visual proof; for display/serial work add
+a fresh marker to the image and confirm it after flashing. Open the photo before
+claiming success. A stale `.esphome/` image or buffered log is not proof.
 
-Check the board identity again immediately before flashing:
+## Client tools
 
-```bash
-devcontainer exec --workspace-folder . tools/espwb-esptool flash-id
+| Tool | Purpose |
+|---|---|
+| `tools/wb`, `tools/espwb-ssh` | Restricted `ssh ${BENCH_AGENT:-bench-agent} <verb>` |
+| `tools/espwb-status` | Status plus health; distinguishes SSH OFF from DEGRADED |
+| `tools/espwb-esptool` | Identity, single merged-image write, zero-offset backup |
+| `tools/espwb-monitor [seconds]` | `serial-follow`, bounded to 600 s, no reset on exit |
+| `tools/workbench-camera-capture` | Remote snap, atomic local JPEG |
+| `tools/workbench-camera-sequence` | Remote timed sequence, atomic tar archive |
+| `tools/validate-bench.sh` | Local prerequisites and read-only remote checks |
+
+Existing tool names remain where they still describe the operation. The old
+validation filename is a warning/exec shim for one release. Configuration
+compatibility and intentionally unsupported legacy operations are documented in
+`config/README.md`. Service logic is entirely in `bench/`; historical helpers
+must not be installed.
+
+## Develop and publish safely
+
+```sh
+bench/dev/setup-venv.sh
+bench/dev/check.sh
 ```
 
-Confirm the detected chip family and flash size still match the `board` and
-`flash_size` values you put in the blink YAML. Stop here if they do not match.
+The suite uses fake USB trees, PTYs and fake tools/SSH without physical hardware;
+ShellCheck covers both `bench/` and `tools/`. It must finish with `ALL PASS`.
+Real hardware commissioning remains a separate gate. Keep firmware, backups,
+photos, private identities, SSH keys, `secrets.yaml`, local env files and generated
+build trees out of Git. Run the [public-release checklist](docs/public-release-checklist.md)
+before publication; GitHub pushes require explicit approval.
 
-Flash only after a successful compile of that same YAML:
-
-```bash
-devcontainer exec --workspace-folder . tools/espwb-esptool write-flash 0x0 examples/generic-blink/.esphome/build/generic-blink/.pioenvs/generic-blink/firmware.factory.bin
-```
-
-## Workbench Tools
-
-Start with status when the workbench state is unclear:
-
-```bash
-devcontainer exec --workspace-folder . tools/espwb-status
-```
-
-The status helper checks host, SSH, API, and serial-socket reachability, then
-prints the selected slot state and USB identities reported by the workbench API.
-Treat `serial: reachable` as a portal-socket check only; it does not prove that
-the application firmware is awake or responding. Native USB boards can expose
-different identities for application firmware, ROM bootloader, and deep sleep.
-
-`tools/espwb-esptool` SSHs to the workbench and calls the reset-aware helper
-there. Use it for esptool operations and flashing:
-
-```bash
-devcontainer exec --workspace-folder . tools/espwb-esptool flash-id
-devcontainer exec --workspace-folder . tools/espwb-esptool chip-id
-devcontainer exec --workspace-folder . tools/espwb-esptool read-flash 0x0 0x1000 artifacts/readback.bin
-devcontainer exec --workspace-folder . tools/espwb-esptool write-flash 0x0 path/to/firmware.factory.bin
-```
-
-After each operation, the wrapper asks the workbench API to recover/release the
-slot after the RFC2217 portal has restarted. It accepts the API's `running`
-status when available, and falls back to checking the slot's RFC2217 TCP port
-when the API state is stale but the portal is reachable. This extra step
-protects ESP32-S3 USB-Serial/JTAG boards from getting wedged when the portal
-reopens the serial device. Set `ESPWB_POST_OPERATION_RECOVER=0` only when
-debugging that recovery path.
-
-A healthy recovery usually ends with one of these messages:
-
-```text
-== workbench reports SLOT1 recovered and portal running ==
-== workbench reports SLOT1 recovered; RFC2217 TCP port is reachable ==
-```
-
-If recovery still times out, the wrapper prints the last slot status it saw,
-including values such as `present`, `running`, `state`, `last_error`, and any
-TCP connection error.
-
-When OpenOCD is available for the slot, the wrapper also checks that the chip
-did not stay in ESP32-S3 ROM/download code after recovery. If it reports an
-error like `still appears to be in ESP32-S3 ROM/download code`, the flash may
-have verified successfully but the application is not running. Release BOOT and
-reset the board, or fix the workbench BOOT/EN fixture wiring/state so unattended
-recovery can do the same. Set `ESPWB_VERIFY_APP_BOOT=0` only while debugging
-that verification path.
-
-If a manual press of the board RESET button makes the freshly flashed app start,
-the firmware image is valid. Treat that as evidence that the remaining problem
-is the automated post-flash release/reset path, not the ESPHome YAML. On
-ESP32-S3 USB-Serial/JTAG boards this often means the board was left in
-`DOWNLOAD(USB/UART0)` and needs a plain reset with BOOT released.
-
-If `flash-id` fails with a pySerial write timeout and the workbench API reports
-the board in application USB identity instead of Espressif ROM/download mode,
-the board has not entered the ROM bootloader. For boards like the
-UnexpectedMaker FeatherS3, the manual recovery sequence is BOOT held while
-RESET is pressed and released; unattended recovery needs equivalent BOOT/RESET
-wiring in the workbench fixture.
-
-`tools/espwb-monitor` opens raw DUT serial logs through RFC2217:
-
-```bash
-devcontainer exec --workspace-folder . tools/espwb-monitor
-```
-
-By default it runs `tools/espwb-esptool flash-id` when the monitor exits. This
-gives the reset-aware helper a chance to recover targets that are perturbed by
-closing an RFC2217 session. Set `ESPWB_MONITOR_RECOVER=0` only when you are
-intentionally debugging monitor close behavior, and only together with
-`ESPWB_MONITOR_ALLOW_UNRECOVERED_EXIT=1`. If a board is blank or stuck after a
-monitor session, recover it with:
-
-```bash
-devcontainer exec --workspace-folder . tools/espwb-esptool flash-id
-```
-
-Do not open the workbench `/dev/ttyACM*` device directly with ad hoc serial
-tools for routine monitoring. On ESP32-S3 USB-Serial/JTAG boards, plain serial
-opens can toggle control lines and leave the board in ROM download mode or a
-visually wedged state. Use `tools/espwb-monitor` and let its post-monitor
-recovery run.
-
-The bench camera, RP2040/RP2350 flashing, and AI-agent access live **on the
-workbench** behind a restricted SSH user (`workbench-agent` alias). See
-[`docs/workbench-build-from-scratch.md`](docs/workbench-build-from-scratch.md)
-for the full rebuild runbook, and [`skills/workbench/`](skills/workbench/SKILL.md)
-for the agent-facing skill (used by Claude Code and Hermes).
-
-```bash
-tools/wb status                          # slots, camera, allowed slots
-tools/wb snap > photo.jpg                # one JPEG from the bench camera
-tools/wb flash-pico SLOT1 < firmware.uf2 # RP2040/RP2350: BOOTSEL, write, verify, run
-tools/workbench-camera-capture           # same camera, into artifacts/
-tools/workbench-camera-sequence 4 3
-```
-
-The camera helpers use a local V4L2 device when `WORKBENCH_CAMERA_DEVICE`
-exists on this host, and otherwise fetch the photo from the bench.
-
-## Safety Rules
-
-- Keep `SLOT1` as the safe default unless a downstream project explicitly
-  approves another slot.
-- Use `tools/espwb-esptool` for flashing and esptool operations.
-- Use RFC2217 only for serial monitoring through `tools/espwb-monitor`.
-- Do not use RFC2217 reset control for flashing.
-- Only flash a `firmware.factory.bin` immediately after compiling the matching
-  YAML; ignored `.esphome/` build trees can contain stale binaries.
-- Keep `config/workbench.env`, `secrets.yaml`, `.env` files, private keys,
-  tokens, generated firmware, `.esphome/`, and `artifacts/` out of git.
-- Run `docs/public-release-checklist.md` before making any repo public.
-
-## Repository Map
-
-- `.devcontainer/` - ESPHome devcontainer definition.
-- `config/workbench.env.example` - safe placeholder workbench settings.
-- `examples/generic-blink/` - tiny GPIO blink smoke test.
-- `examples/feathers3-rgb-blink/` - board-specific FeatherS3 RGB blink smoke
-  test.
-- `examples/generic-heartbeat/` - tiny heartbeat/logging smoke test.
-- `examples/magtag-lvgl-shapes/` - MagTag e-paper LVGL widget example.
-- `tools/espwb-ssh` - project-local SSH wrapper.
-- `tools/espwb-status` - USB-aware workbench and slot status helper.
-- `tools/espwb-esptool` - reset-aware esptool/flashing wrapper.
-- `tools/espwb-monitor` - RFC2217 serial monitor wrapper.
-- `tools/workbench-local-esptool` - reference helper installed on the workbench
-  as `/usr/local/bin/espwb-local-esptool`.
-- `tools/workbench-camera-capture` - camera snapshot (local V4L2 or the bench).
-- `tools/workbench-camera-sequence` - timed camera snapshots.
-- `tools/wb` - thin client for the bench's restricted agent interface.
-- `workbench/` - Pi-side helpers and installer: camera, RP2 flashing, agent
-  user, pinned slot config.
-- `skills/workbench/` - agent skill (Claude Code / Hermes) for the bench.
-- `tools/validate-workbench.sh` - local toolchain and workbench validation.
-- `docs/magtag-lvgl-refresh-analysis.md` - root-cause note for MagTag LVGL
-  draw-end events and e-paper refresh behavior.
-- `docs/native-usb-recovery.md` - native USB and direct recovery guide.
-- `docs/workbench-cheatsheet.md` - command reference.
-- `docs/workbench-build-from-scratch.md` - rebuild the workbench Pi (portal,
-  camera, RP2 flashing, agent access, pitfalls).
-- `docs/public-release-checklist.md` - public hygiene checks.
-
-## Starting a Device Project
-
-For a real device repo, keep the first firmware intentionally tiny:
-
-1. Copy this starter or use it as the base repo.
-2. Set local workbench values in ignored `config/workbench.env`.
-3. Validate the devcontainer and workbench path.
-4. Add one minimal board-specific ESPHome YAML.
-5. Run `esphome config` and `esphome compile`.
-6. Confirm board identity with `tools/espwb-esptool flash-id`.
-7. Flash through `tools/espwb-esptool`.
-8. Record the validated facts in `docs/current-state.md`.
-
-Add display, touch, sensors, Home Assistant, OTA, and UI behavior one step at a
-time. Keep hardware-specific notes, photos, generated firmware, and private
-values in the downstream project, not in this generic starter.
+This is a reusable starter, not a device abstraction layer. Put detailed pinouts,
+Home Assistant entities, UI and private evidence in downstream projects. Add one
+subsystem at a time. See [native USB recovery](docs/native-usb-recovery.md) for
+boards whose application and bootloader identities differ.

@@ -1,0 +1,8 @@
+# label   usb-port-path   [monitor=auto|on|off] [baud=N]
+# Both labels and paths must be unique. Defaults: monitor=auto baud=115200.
+SLOT1     1-1.1.1
+SLOT2     1-1.1.2
+SLOT3     1-1.1.3
+SLOT4     1-1.1.4
+SLOT5     1-1.2          monitor=auto
+SLOT6     1-1.3

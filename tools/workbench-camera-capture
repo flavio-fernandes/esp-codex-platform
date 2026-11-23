@@ -1,85 +1,15 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/workbench-env
-source "${SCRIPT_DIR}/lib/workbench-env"
-load_workbench_env \
-  WORKBENCH_CAMERA_DEVICE WORKBENCH_CAMERA_WIDTH WORKBENCH_CAMERA_HEIGHT WORKBENCH_CAMERA_SKIP
-
-DEVICE="${WORKBENCH_CAMERA_DEVICE:-/dev/v4l/by-id/usb-<camera-vendor>_<model>_<serial>-video-index0}"
-WIDTH="${WORKBENCH_CAMERA_WIDTH:-1280}"
-HEIGHT="${WORKBENCH_CAMERA_HEIGHT:-720}"
-SKIP="${WORKBENCH_CAMERA_SKIP:-10}"
-OUT=""
-
-usage() {
-  cat <<USAGE
-Usage:
-  tools/workbench-camera-capture [output.jpg]
-
-Environment:
-  WORKBENCH_CAMERA_DEVICE  V4L2 camera device path
-                           default /dev/v4l/by-id/usb-<camera-vendor>_<model>_<serial>-video-index0
-  WORKBENCH_CAMERA_WIDTH   capture width, default 1280
-  WORKBENCH_CAMERA_HEIGHT  capture height, default 720
-  WORKBENCH_CAMERA_SKIP    frames to skip before capture, default 10
-  WORKBENCH_AGENT_HOST     ssh alias of the bench agent user, used when the camera
-                           device is not local (default workbench-agent)
-
-Default output:
-  artifacts/workbench-camera-<timestamp>.jpg
-USAGE
-}
-
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  usage
+source "$SCRIPT_DIR/lib/workbench-env"
+load_bench_env
+if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
+  printf 'Usage: tools/workbench-camera-capture [output.jpg]\nCapture the bench camera via SSH; server exposure is the default.\n'
   exit 0
 fi
-
-if [[ "$#" -gt 1 ]]; then
-  usage >&2
-  exit 2
-fi
-
-need() {
-  command -v "$1" >/dev/null 2>&1 || {
-    echo "missing required command: $1" >&2
-    exit 1
-  }
-}
-
-need date
-need dirname
-need mkdir
-
-OUT="${1:-artifacts/workbench-camera-$(date -u +%Y%m%dT%H%M%SZ).jpg}"
-mkdir -p "$(dirname "$OUT")"
-
-# The camera now lives on the workbench itself. With no local device, fetch the
-# photo from the bench through its restricted agent interface (ssh alias
-# WORKBENCH_AGENT_HOST, default workbench-agent). See docs/workbench-build-from-scratch.md.
-if [[ ! -e "$DEVICE" ]]; then
-  need ssh
-  AGENT_HOST="${WORKBENCH_AGENT_HOST:-workbench-agent}"
-  tmp="${OUT}.part"
-  if ssh "$AGENT_HOST" snap "res=${WIDTH}x${HEIGHT}" "skip=${SKIP}" >"$tmp"; then
-    mv "$tmp" "$OUT"
-    printf '%s\n' "$OUT"
-    exit 0
-  fi
-  rm -f "$tmp"
-  echo "no local camera at $DEVICE and remote snap via $AGENT_HOST failed" >&2
-  exit 1
-fi
-need v4l2-ctl
-
-v4l2-ctl \
-  --device "$DEVICE" \
-  --set-fmt-video="width=${WIDTH},height=${HEIGHT},pixelformat=MJPG" \
-  --stream-mmap \
-  --stream-skip="$SKIP" \
-  --stream-count=1 \
-  --stream-to="$OUT" >/dev/null
-
-printf '%s\n' "$OUT"
+[[ $# -le 1 ]] || exit 2
+out="${1:-artifacts/bench-camera-$(date -u +%Y%m%dT%H%M%SZ).jpg}"
+bench_camera_options
+bench_download "$out" snap "${BENCH_CAMERA_OPTIONS[@]}"
+printf '%s\n' "$out"

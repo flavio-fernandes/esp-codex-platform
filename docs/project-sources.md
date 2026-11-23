@@ -4,7 +4,7 @@ Record upstream references used by the downstream project here.
 
 Good candidates:
 
-- Workbench project or setup docs
+- [Bench design](../bench/DESIGN.md) and [setup runbook](bench-build-from-scratch.md)
 - ESPHome component docs
 - Board vendor docs
 - Board schematics or pinout pages

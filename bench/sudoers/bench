@@ -1,0 +1,2 @@
+Defaults!/usr/local/sbin/bench-usb env_keep += "BENCH_CLIENT"
+wbagent ALL=(root) NOPASSWD: /usr/local/sbin/bench-usb

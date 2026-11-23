@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+"""Inspect, back up or flash an RP2 board from a checkout or the installed bench library."""
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+sys.path.append("/opt/bench/lib")
+from benchlib.rp2flash import main
+
+if __name__ == "__main__":
+    sys.exit(main())

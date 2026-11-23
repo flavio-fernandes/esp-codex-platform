@@ -21,7 +21,7 @@ Do not push if any of these are tracked:
 - firmware binaries such as `*.bin`, `*.elf`, `*.factory.bin`, or `*.ota.bin`
 - `artifacts/`
 - `.esphome/`
-- local workbench config such as `config/workbench.env`
+- local bench config such as `config/bench.env` or legacy `config/workbench.env`
 
 Create a private repo by default unless the user explicitly chooses otherwise.
 Make a repo public only after running `docs/public-release-checklist.md`.

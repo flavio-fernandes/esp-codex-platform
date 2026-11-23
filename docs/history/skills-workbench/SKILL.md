@@ -7,6 +7,11 @@ license: MIT
 tags: [workbench, testbench, flash, firmware, esp32, rp2040, pico, uf2, camera, serial, hardware]
 ---
 
+> **Historical:** retired Pi 3 skill. Do not install or follow it for the current
+> bench. The canonical replacement is `skills/bench/` at the repository root;
+> current operating guidance is `docs/bench-cheatsheet.md`. The included
+> `references/bench-hello.patch` targets the old 1.2.1 tree only.
+
 # Workbench: flash real boards, read serial, photograph the result
 
 The workbench is a Raspberry Pi on the LAN with microcontroller boards on a USB hub
