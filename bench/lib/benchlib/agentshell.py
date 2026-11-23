@@ -241,8 +241,11 @@ class Shell:
             busy = "unknown"
         print(f"camera  {'present' if os.path.exists(device) else 'MISSING'} ({device}) busy={busy}")
         esptool = os.environ.get("BENCH_ESPTOOL") or "/opt/bench/venv/bin/esptool"
+        # uhubctl lives in /usr/sbin, outside this user's PATH; bench-usb runs it as root via sudo.
+        uhubctl = shutil.which("uhubctl", path=os.pathsep.join(
+            filter(None, [self.env.get("PATH"), "/usr/sbin", "/sbin"]))) or "uhubctl"
         for name, argv in (("picotool", ["picotool", "version"]), ("esptool", [esptool, "version"]),
-                           ("v4l2-ctl", ["v4l2-ctl", "--version"]), ("uhubctl", ["uhubctl", "-v"])):
+                           ("v4l2-ctl", ["v4l2-ctl", "--version"]), ("uhubctl", [uhubctl, "-v"])):
             print(f"tool    {name}: {self.version(argv)}")
         return OK
 
