@@ -250,3 +250,12 @@ def test_an_oversized_owner_reply_is_a_protocol_error(roots, slot, monkeypatch):
             serialclient.state("SLOT1")
     finally:
         owner.sock.close()
+
+
+def test_main_explains_a_missing_address(roots, slot, monkeypatch, capsys):
+    """Button-party v2: `logger: level: INFO` hid the IP line and the helper said only IP=unknown."""
+    monkeypatch.setattr(serialowner, "open_serial", lambda device, baud, **_kw: FakeDevice(url=""))
+    assert wifiprov.main(["SLOT1"], stdin=io.StringIO(f"{SSID}\n{PASSWORD}\n")) == 0
+    out, err = capsys.readouterr()
+    assert "state: provisioned" in out and "url:" not in out
+    assert "no address seen" in err and "default level" in err

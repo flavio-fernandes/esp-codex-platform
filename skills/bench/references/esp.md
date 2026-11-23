@@ -17,7 +17,7 @@ ssh bench-agent esp-save SLOT4 > before.bin.part && mv before.bin.part before.bi
 ```
 
 Omitting SIZE reads detected flash size (or ALL if unavailable); explicit SIZE
-accepts decimal, hex or ALL. Backup begins at zero and may contain credentials.
+accepts decimal, `0x` hex (1 byte to 1 GiB) or ALL. Backup begins at zero and may contain credentials.
 Stop on failure; a partial file is not a backup. Never publish it or place it in
 the repository. Use a single **merged image at 0x0** containing bootloader,
 partition table and application:
@@ -55,5 +55,7 @@ recovery if required. Never bypass the restricted interface.
 Images are built without credentials (`wifi: ap: {}` + `improv_serial:`, no `!secret`). After
 `write-flash` and a fresh serial line, run
 `printf '%s\n%s\n' "$SSID" "$PASSWORD" | ssh bench-agent wifi-provision SLOTn`. Do it after every
-flash: the factory image overwrites NVS. On a CP2102/CH340 board the port is opened with DTR/RTS
+flash; it is idempotent. A re-flash does **not** erase the credentials: with esp-idf, ESPHome's `nvs`
+partition (0x390000 on 4 MB) is outside the factory image. To retire a board, write the image padded
+with 0xFF to the full flash size at 0x0. On a CP2102/CH340 board the port is opened with DTR/RTS
 deasserted, so provisioning does not reset the chip.
