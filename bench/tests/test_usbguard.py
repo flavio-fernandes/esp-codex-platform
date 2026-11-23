@@ -318,3 +318,42 @@ def test_power_cycle_refused_when_uhubctl_does_not_see_the_hub(hub, monkeypatch,
     monkeypatch.setenv("FAKE_UHUBCTL_STATUS", "No compatible devices detected!\\n")
     assert usbguard.main(["power-cycle"]) == 2
     assert "does not report hub 1-1" in capsys.readouterr().err and hub.untouched()
+
+
+def _companion_with_slot(hub, monkeypatch):
+    """Location 1-1 with a clean USB3 companion 2-1, and SLOT4 on the companion at 2-1.2."""
+    hub.usb(path="2-1", vid="05e3", pid="0626")
+    _peer(hub, 2, hub.devices / "2-1:1.0/2-1-port2")
+    hub.usb(path="2-1.2", vid="2e8a", pid="000a", tty="ttyACM4")
+    conf = hub.env.parent / "slots.conf"
+    conf.write_text(conf.read_text() + "SLOT4 2-1.2\n")
+    (hub.env.parent.parent / "run" / "SLOT4.lock").touch(mode=0o444)
+    monkeypatch.setenv("FAKE_UHUBCTL_STATUS", "Current status for hub 2-1 [05e3:0626, USB 3.20, 4 ports, ppps]\\n"
+                                              "Current status for hub 1-1 [05e3:0610, USB 2.10, 4 ports, ppps]\\n")
+
+
+def test_power_cycle_honours_a_hold_on_a_companion_hub_slot(hub, monkeypatch, capsys):
+    _companion_with_slot(hub, monkeypatch)
+    holds.put("SLOT4", "client-b", 30, "busy")
+    assert usbguard.main(["power-cycle"]) == 69
+    assert "SLOT4" in capsys.readouterr().err and hub.uhubctl_calls() == []
+
+
+def test_power_cycle_waits_for_no_one_on_a_companion_hub_slot(hub, monkeypatch):
+    _companion_with_slot(hub, monkeypatch)
+    with locks.slot_lock("SLOT4"):
+        assert usbguard.main(["power-cycle"]) == 65
+    assert hub.uhubctl_calls() == []
+
+
+def test_power_cycle_refused_when_the_topology_changes_under_the_locks(hub, monkeypatch):
+    _companion_with_slot(hub, monkeypatch)
+    real_lock = locks.slot_lock
+
+    def lock_then_plug_storage(slot):
+        if not (hub.devices / "2-1.3").exists():
+            hub.usb(path="2-1.3", vid="0781", pid="5567", storage=True)   # a disk appears meanwhile
+        return real_lock(slot)
+    monkeypatch.setattr(usbguard.locks, "slot_lock", lock_then_plug_storage)
+    assert usbguard.main(["power-cycle"]) == 2
+    assert hub.uhubctl_calls() == []

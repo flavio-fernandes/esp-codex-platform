@@ -81,14 +81,15 @@ def plan_power_cycle():
     tool = shutil.which("uhubctl")
     if tool is None:
         raise Refused(TOOL_FAILED, "uhubctl is not installed")
-    for hub in sorted({location} | peer_hubs(location) | uhubctl_hubs(tool, location)):
+    hubs = sorted({location} | peer_hubs(location) | uhubctl_hubs(tool, location))
+    for hub in hubs:
         if usbdev.is_root_hub(hub):
             raise Refused(REFUSED, f"refused: cycling {location} also switches root hub {hub} "
                                    "(USB3 companion); root hubs are never power-cycled")
         if usbdev.subtree_has_mass_storage(hub):
             raise Refused(REFUSED, f"refused: a mass-storage interface (class 08) is in the subtree of hub {hub}"
                                    + ("" if hub == location else f", the companion of {location}"))
-    return location, tool
+    return location, tool, hubs
 
 
 def _hub_name(name):
@@ -164,20 +165,20 @@ def usb_reset(slot, client, record):
     return OK
 
 
-def affected_slots(location):
-    """Configured slots on or beneath the hub at `location`."""
+def affected_slots(hubs):
+    """Configured slots on or beneath any of `hubs` (the location and its USB3/USB2 companions)."""
     slots = config.load_slots()
     return sorted(label for label, options in slots.items()
-                  if options["path"] == location or options["path"].startswith(location + "."))
+                  if any(options["path"] == hub or options["path"].startswith(hub + ".") for hub in hubs))
 
 
 def power_cycle(record, client):
-    location, tool = plan_power_cycle()
+    location, tool, hubs = plan_power_cycle()
     record["note"] = f"hub {location}"
-    # Every board under the hub loses power: honour every slot's hold and wait for no one, and
-    # keep all their locks until the cycle is over (PR review, 2026-11-22).
+    # Every board under the hub AND under its companion hubs loses power: honour every such slot's
+    # hold, wait for no one, and keep all their locks until the cycle is over (PR review, 2026-11-22).
     with ExitStack() as held:
-        for slot in affected_slots(location):
+        for slot in affected_slots(hubs):
             try:
                 held.enter_context(locks.slot_lock(slot))
             except locks.Busy:
@@ -186,6 +187,10 @@ def power_cycle(record, client):
                 holds.check(slot, client)
             except holds.Held as exc:
                 raise Refused(HELD, f"{slot} {exc}") from None
+        # The topology may have changed while we waited for the locks: plan again, and refuse if
+        # the set of hubs uhubctl would switch is no longer the one whose slots we locked.
+        if plan_power_cycle()[2] != hubs:
+            raise Refused(BUSY, f"the hubs around {location} changed during the checks; try again")
         return _run_uhubctl(tool, location)
 
 

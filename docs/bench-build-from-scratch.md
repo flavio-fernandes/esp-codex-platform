@@ -139,9 +139,12 @@ from a client. The guard refuses root-hub operations and mass-storage subtrees
 (except RP2's BOOTSEL interface). A timeout or absent device is not permission
 to reset a wider hub.
 
-`power-cycle` affects the whole configured hub. Enable it only after physically
-proving that the hub **really switches VBUS**, with no disk in its subtree, and
-coordinating every affected slot. Many hubs report switching while leaving power
+`power-cycle` affects the whole configured hub **and its USB3/USB2 companion**:
+uhubctl switches both halves of a USB3 hub. `bench-usb` refuses when a companion is a
+root hub (on a Raspberry Pi 4, `1-1` pairs with the USB3 root hub that carries the boot
+disk) or has a disk under it, and it locks and checks holds on the slots of both halves.
+Enable it only after physically proving that the hub **really switches VBUS**, with no
+disk in its subtree, and coordinating every affected slot. Many hubs report switching while leaving power
 on; a USB detach is not proof. Never use the root hub as a fallback. Battery-backed
 boards may remain powered even when VBUS is cut.
 

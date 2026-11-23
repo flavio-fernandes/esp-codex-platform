@@ -109,6 +109,11 @@ SLOT6     1-1.3
 | `pause` | `{"op":"pause","by":"<who>"}` | `{"ok":true,"paused":true}` once the tty is **closed**. The pause lasts while this connection stays open; closing it (or the client dying) resumes automatically |
 | `reset` | `{"op":"reset"}` | esp-uart only: the standard EN pulse (RTS low→high with DTR high), then `{"ok":true}` |
 
+A reply that is not a JSON object, or an error without the usual fields, is a protocol error
+(`bad-response`) for every client: a broken pause is busy (65) for the flashers and
+`wifi-provision`, a broken read is a failure (1) for the agent's serial verbs; never a usage error
+or a traceback.
+
   Errors: `{"ok":false,"error":"<code>","detail":".."}` with codes `bad-request`, `absent`,
   `paused`, `not-open`, `timeout`, `unsupported`.
 - Readiness contract: `state.open==true` means the tty is open **and** the reader thread runs.
@@ -124,8 +129,9 @@ SLOT6     1-1.3
 - Files that the root helper (`bench-usb`) opens in the group-writable `/run/bench` and `/var/lib/bench` are opened
   with `O_NOFOLLOW` (+ `O_NONBLOCK`), and must be regular files (history: also a single link). A planted symlink,
   FIFO or device is refused. As root, `bench-usb` ignores the `BENCH_*` path overrides.
-- `power-cycle` takes the lock and checks the hold of every slot on or under the hub, and keeps the locks until the
-  cycle ends. Another client's hold → 69, a busy slot → 65.
+- `power-cycle` takes the lock and checks the hold of every slot on or under the hub **and its companion hubs**
+  (every hub uhubctl will switch, see `bench-usb`), and keeps the locks until the cycle ends. Another client's
+  hold → 69, a busy slot → 65. With the locks held it plans again; if the set of hubs changed meanwhile → 65.
 
 - **Lock** (`benchlib.locks.slot_lock(slot)`): `flock` on `/run/bench/SLOTn.lock`, which is opened
   read-only (pre-created by tmpfiles; never created in a sticky dir). Every flash, backup, info,
@@ -202,7 +208,8 @@ Details fixed by the implementation (`benchlib.espflash`):
   `chip-id`, `flash-id`, `read-flash 0 SIZE OUT` or `write-flash 0xOFF FILE`.
 - Usage (2) is checked before the lock and writes no history: the argv shape, a configured slot,
   a `write-flash` offset matching `0x[0-9a-fA-F]+` and a readable, non-empty file, a `read-flash`
-  SIZE of `ALL`, decimal or 0x-hex above 0, and an existing directory for OUT.
+  SIZE of `ALL`, or decimal (leading zeros allowed) or 0x-hex bytes from 1 to 1 GiB, passed to esptool
+  as hex; and an existing directory for OUT.
 - `read-flash` and `write-flash` run `flash-id` first; its output goes to stderr without MAC lines,
   followed by `identity: chip=.. flash=.. bytes`. A file that does not fit the detected flash at
   its offset, or a SIZE above it, is refused with 2 (recorded in history). `read-flash` without
@@ -286,7 +293,8 @@ Details fixed by the implementation (`benchlib.usbguard`, `bench/sbin/bench-usb`
 Details fixed by the implementation (`benchlib.camera`):
 - `snap OUT.jpg [exposure=auto|N] [res=WxH] [skip=N]`, `burst OUTDIR COUNT [same]` (COUNT 1–300,
   frames `frame-NNN.jpg`, the frame count on stdout), `stats IN.jpg [threshold=N]` (JSON on stdout,
-  default threshold 128). Unknown options are usage errors.
+  default threshold 128). Unknown or out-of-range options are usage errors: exposure 1–10000 (or
+  `auto`), width and height 16–4096, skip 0–300, threshold 0–255.
 - bench.env: `BENCH_CAMERA_DEVICE` (default `/dev/video0`), `BENCH_CAMERA_EXPOSURE` (`auto`),
   `BENCH_CAMERA_WIDTH`/`HEIGHT` (1280×720), `BENCH_CAMERA_SKIP` (10). Exposure is set before every
   capture (`auto_exposure=3`, or `auto_exposure=1` plus `exposure_time_absolute=N`).
