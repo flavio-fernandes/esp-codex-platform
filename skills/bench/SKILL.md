@@ -110,7 +110,10 @@ Build machines never see Wi-Fi credentials. Build the image **without** them and
 provision it on the bench afterwards, over the slot's serial port:
 
 - ESPHome: `wifi:` with `ap: {}` and **no** `ssid`/`password`, plus `improv_serial:`
-  (and keep `logger:` on its default UART/USB port). No `!secret` anywhere.
+  (and keep `logger:` on its default UART/USB port and its default level). No `!secret`
+  anywhere. ESPHome sends a `url:` only with `web_server:`; otherwise the bench reads the
+  address from the board's `[C] IP Address:` log line, which `level: INFO` or higher hides
+  (then there is no `url:`, and a hint on stderr).
 - After the flash and the first fresh serial line:
   `printf '%s\n%s\n' "$SSID" "$PASSWORD" | ssh bench-agent wifi-provision SLOTn`.
   Prints `url: http://<ip>` and `state: provisioned`. The credentials go only on

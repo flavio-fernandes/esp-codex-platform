@@ -87,6 +87,11 @@ def run(slot, client, ssid, password, open_port=None, record=None):
     for url in result["urls"]:
         print(f"url: {url}", flush=True)
     print(f"state: {result['state'] or 'provisioned'}", flush=True)
+    if not result["urls"]:
+        # ESPHome sends a URL only with web_server:, so the address comes from the board's own
+        # "[C] IP Address:" log line, which a logger level above CONFIG (e.g. INFO) hides.
+        log("joined, but no address seen: keep the ESPHome logger at its default level "
+            "(DEBUG) or add web_server:, then rebuild and reflash")
     record["note"] = "wifi provisioned" + (f"; {result['urls'][0]}" if result["urls"] else "")
     return OK
 
